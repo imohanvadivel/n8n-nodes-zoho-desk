@@ -1,0 +1,59 @@
+{
+  "name": "@mohanvadivel/n8n-nodes-zoho-desk",
+  "version": "1.0.1",
+  "description": "Zoho Desk community nodes for n8n.",
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "zoho",
+    "zoho-desk",
+    "helpdesk",
+    "tickets",
+    "crm"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/imohanvadivel/n8n-nodes-zoho-desk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imohanvadivel/n8n-nodes-zoho-desk.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=18.10"
+  },
+  "scripts": {
+    "build": "tsc && rsync -a --include='*.png' --include='*.svg' --include='*.json' --exclude='*' src/nodes/ dist/nodes/",
+    "dev": "tsc --watch",
+    "test": "bun test",
+    "lint": "eslint . --ext .ts,.json",
+    "lintfix": "eslint . --ext .ts,.json --fix"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/ZohoDeskOAuth2Api.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/ZohoDesk.node.js",
+      "dist/nodes/ZohoDeskTrigger.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "@typescript-eslint/parser": "^8.57.1",
+    "eslint": "8",
+    "eslint-plugin-n8n-nodes-base": "^1.16.6",
+    "jsonc-eslint-parser": "^3.1.0",
+    "typescript": "^5.3.3"
+  },
+  "peerDependencies": {
+    "n8n-workflow": ">=1.0.0"
+  },
+  "dependencies": {}
+}
