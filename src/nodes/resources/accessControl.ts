@@ -1,4 +1,5 @@
 import type { INodeProperties, IDataObject } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 import type { ResourceExecuteHandler } from './types';
 import { zohoApiRequest } from '../helpers';
 
@@ -690,8 +691,9 @@ export const executeAccessControl: ResourceExecuteHandler = async (context, oper
 		case 'role:listAgents': {
 			const roleId = context.getNodeParameter('roleId', i) as string;
 			const response = await zohoApiRequest(context, 'GET', `/roles/${encodeURIComponent(roleId)}/agents`);
+			const agents = response ? ((response as IDataObject).data || response) : [];
 			const executionData = context.helpers.constructExecutionMetaData(
-				context.helpers.returnJsonArray(response as IDataObject),
+				context.helpers.returnJsonArray(agents as IDataObject[]),
 				{ itemData: { item: i } },
 			);
 			returnData.push(...executionData);
@@ -940,7 +942,7 @@ export const executeAccessControl: ResourceExecuteHandler = async (context, oper
 		}
 
 		default:
-			break;
+			throw new NodeOperationError(context.getNode(), `Unknown action: ${actionKey}`, { itemIndex: i });
 	}
 
 	return returnData;

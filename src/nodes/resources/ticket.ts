@@ -1,4 +1,5 @@
 import type { INodeProperties, IDataObject, INodeExecutionData } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 import type { ResourceExecuteHandler } from './types';
 import { zohoApiRequest } from '../helpers';
 
@@ -235,8 +236,9 @@ export const executeTicket: ResourceExecuteHandler = async (context, operation, 
 		case 'moveDepartment': {
 			const departmentId = context.getNodeParameter('departmentId', i) as string;
 			const response = await zohoApiRequest(context, 'POST', `/tickets/${encodeURIComponent(ticketId)}/move`, { departmentId });
+			const result = response || { success: true };
 			const executionData = context.helpers.constructExecutionMetaData(
-				context.helpers.returnJsonArray(response as IDataObject),
+				context.helpers.returnJsonArray(result as IDataObject),
 				{ itemData: { item: i } },
 			);
 			returnData.push(...executionData);
@@ -277,7 +279,7 @@ export const executeTicket: ResourceExecuteHandler = async (context, operation, 
 		}
 
 		default:
-			break;
+			throw new NodeOperationError(context.getNode(), `Unknown action: ticket:${operation}`, { itemIndex: i });
 	}
 
 	return returnData;

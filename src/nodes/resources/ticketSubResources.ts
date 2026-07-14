@@ -1,4 +1,5 @@
 import type { INodeProperties, IDataObject } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 import type { ResourceExecuteHandler } from './types';
 import { zohoApiRequest } from '../helpers';
 
@@ -689,6 +690,6 @@ export const executeTicketSubResources: ResourceExecuteHandler = async (context,
 		}
 
 		default:
-			return [];
+			throw new NodeOperationError(context.getNode(), `Unknown action: ${actionKey}`, { itemIndex: i });
 	}
 };

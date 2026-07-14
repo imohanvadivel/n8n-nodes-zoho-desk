@@ -482,7 +482,20 @@ export const executeRecord: ResourceExecuteHandler = async (context, operation, 
 			for (const key of validParams) {
 				if (options[key]) qs[key] = options[key];
 			}
-			if (options._all) qs._all = true;
+			// _all=true conflicts with field-specific filters — Zoho rejects the combination
+			const hasFieldFilters = ((criteria.filter as IDataObject[] | undefined) || []).some(
+				(f) => f.field && f.field !== '_unsupported',
+			);
+			if (options._all) {
+				if (hasFieldFilters) {
+					throw new NodeOperationError(
+						context.getNode(),
+						'"Include All" (_all) cannot be combined with search filters. Remove the filters or disable "Include All".',
+						{ itemIndex: i },
+					);
+				}
+				qs._all = true;
+			}
 
 			// Modules/fields that support wildcard contains (*value*)
 			const WILDCARD_SUPPORT: Record<string, Set<string>> = {
@@ -537,6 +550,9 @@ export const executeRecord: ResourceExecuteHandler = async (context, operation, 
 			returnData.push(...executionData);
 			break;
 		}
+
+		default:
+			throw new NodeOperationError(context.getNode(), `Unknown action: record:${operation}`, { itemIndex: i });
 	}
 
 	return returnData;

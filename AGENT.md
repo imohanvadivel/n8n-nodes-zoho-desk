@@ -115,9 +115,11 @@ Identified by `cm_` prefix:
 ### Module-Specific Quirks
 
 - **Calls/Events:** `direction` field wrongly typed — override to Picklist. `startTime`/`duration` not in layout API but required — inject as extra fields.
-- **Tickets:** `entitySkills` excluded from updates. Status fetched dynamically via `/ticketStatuses`.
+- **Tickets:** `entitySkills` excluded from updates; on GET (`include=skills`) it is an array of skill-ID **strings**, not objects. Status fetched dynamically via `/ticketStatuses`.
 - **Contracts:** `productId`, `accountId`, `associatedSLAId` excluded from updates (deprecated).
 - **Comments:** `isPublic`/`contentType` are tickets-only. Tickets use PATCH, others use PUT.
+- **Pins:** create takes `type` in UPPERCASE (`COMMENTS`/`THREADS`); list takes `types` in lowercase (`comments,threads`). Both casings verified against the OAS.
+- **Email Templates:** `fromId` is the support email **address** string (OAS pattern is an email regex), not a numeric ID, despite the name.
 
 ---
 
@@ -139,17 +141,22 @@ Uses `resourceMapper` for dynamic field loading from Zoho's layout API.
 
 | Operation | Method | Endpoint |
 |-----------|--------|----------|
-| Assign | PUT | `/tickets/{id}/assignee` |
-| Round Robin | (custom logic) | `/tickets/{id}/assignee` |
-| Shift Based | (custom logic) | `/tickets/{id}/assignee` |
-| Skill Based | (custom logic) | `/tickets/{id}/assignee` |
+| Assign | PATCH | `/tickets/{id}` with `assigneeId`/`teamId` in body |
+| Round Robin | (custom logic) | `PATCH /tickets/{id}` |
+| Shift Based | (custom logic) | `PATCH /tickets/{id}` |
+| Skill Based | (custom logic) | `PATCH /tickets/{id}` |
 | Get Metrics | GET | `/tickets/{id}/metrics` |
 | Mark as Read | POST | `/tickets/{id}/markAsRead` |
 | Mark as Unread | POST | `/tickets/{id}/markAsUnRead` |
 | Merge | POST | `/tickets/{id}/merge` |
 | Move Department | POST | `/tickets/{id}/move` |
-| Share | POST | `/tickets/{id}/share` |
+| Share | PATCH | `/tickets/{id}` with `sharedDepartments: [{id, type}]` |
 | Split | POST | `/tickets/{id}/threads/{threadId}/split` |
+
+There is NO dedicated `/assignee` or `/share` endpoint (verified against the OAS). Assignment and
+sharing go through the ticket PATCH: `assigneeId` and `sharedDepartments` (`type` enum:
+`READ_ONLY`/`READ_WRITE`/`RESTRICTED_ACCESS`) are writable body fields. Note: the OAS lists
+`teamId` only in responses, but ticket update accepts it in practice.
 
 ### Comment
 

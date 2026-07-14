@@ -1,4 +1,5 @@
 import type { INodeProperties, IDataObject, INodeExecutionData } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 import type { ResourceExecuteHandler } from './types';
 import { zohoApiRequest } from '../helpers';
 
@@ -282,6 +283,9 @@ export const executeTag: ResourceExecuteHandler = async (context, operation, i) 
 			returnData.push(...executionData);
 			break;
 		}
+
+		default:
+			throw new NodeOperationError(context.getNode(), `Unknown action: tag:${operation}`, { itemIndex: i });
 	}
 
 	return returnData;

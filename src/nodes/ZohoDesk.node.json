@@ -1,5 +1,5 @@
 {
-	"node": "n8n-nodes-zohodesk.zohoDesk",
+	"node": "@mohanvadivel/n8n-nodes-zoho-desk.zohoDesk",
 	"nodeVersion": "1.0",
 	"codexVersion": "1.0",
 	"categories": ["Communication"],

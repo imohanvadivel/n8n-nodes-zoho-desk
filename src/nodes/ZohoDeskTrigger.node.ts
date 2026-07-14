@@ -8,6 +8,7 @@ import type {
 	IWebhookResponseData,
 	IDataObject,
 } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 import { zohoWebhookRequest, zohoLoadOptionsRequest } from './helpers';
 
 // ─── Event definitions per module ────────────────────────────────────────────
@@ -318,9 +319,15 @@ export class ZohoDeskTrigger implements INodeType {
 						`/webhooks/${staticData.webhookId as string}`,
 					);
 					return true;
-				} catch {
-					delete staticData.webhookId;
-					return false;
+				} catch (error) {
+					// Only treat a definitive not-found as "webhook gone". A transient
+					// failure (rate limit, network) must not trigger a duplicate create.
+					const message = (error as Error).message ?? '';
+					if (/404|NOT[_ ]?FOUND|INVALID_DATA|UNPROCESSABLE/i.test(message)) {
+						delete staticData.webhookId;
+						return false;
+					}
+					return true;
 				}
 			},
 
@@ -331,18 +338,36 @@ export class ZohoDeskTrigger implements INodeType {
 				const departmentIds = this.getNodeParameter('departmentIds', []) as string[];
 				const options = this.getNodeParameter('options', {}) as IDataObject;
 
-				// Parse track fields for "Specific Fields" events (max 5)
-				const trackFields = (this.getNodeParameter('trackFields', []) as string[]).slice(0, 5);
+				// Parse track fields for "Specific Fields" events (max 5, enforced by Zoho)
+				const trackFields = this.getNodeParameter('trackFields', []) as string[];
+				if (trackFields.length > 5) {
+					throw new NodeOperationError(
+						this.getNode(),
+						`Zoho Desk supports tracking at most 5 fields, but ${trackFields.length} are selected.`,
+					);
+				}
+
+				// Group variant modifiers by base event (e.g. "Ticket_Update:prevState",
+				// "Ticket_Thread_Add:in") so selecting several variants of the same event
+				// merges their options instead of the last one overwriting the others.
+				const PLAIN = '__plain__';
+				const modifiersByEvent = new Map<string, Set<string>>();
+				for (const event of events) {
+					const colonIdx = event.indexOf(':');
+					const baseEvent = colonIdx === -1 ? event : event.substring(0, colonIdx);
+					const modifiers = modifiersByEvent.get(baseEvent) ?? new Set<string>();
+					if (colonIdx === -1) {
+						modifiers.add(PLAIN);
+					} else {
+						for (const m of event.substring(colonIdx + 1).split(':')) modifiers.add(m);
+					}
+					modifiersByEvent.set(baseEvent, modifiers);
+				}
 
 				// Build subscriptions object
 				const subscriptions: Record<string, unknown> = {};
 
-				for (const event of events) {
-					// Parse variant suffixes (e.g. "Ticket_Update:prevState", "Ticket_Thread_Add:in")
-					const colonIdx = event.indexOf(':');
-					let baseEvent = colonIdx === -1 ? event : event.substring(0, colonIdx);
-					const modifiers = new Set(colonIdx === -1 ? [] : event.substring(colonIdx + 1).split(':'));
-
+				for (const [baseEvent, modifiers] of modifiersByEvent) {
 					const eventConfig: Record<string, unknown> = {};
 
 					// Add department filter for supported events
@@ -350,20 +375,30 @@ export class ZohoDeskTrigger implements INodeType {
 						eventConfig.departmentIds = departmentIds;
 					}
 
-					// Add includePrevState if variant includes :prevState
+					// Add includePrevState if any variant includes :prevState
 					if (modifiers.has('prevState')) {
 						eventConfig.includePrevState = true;
 					}
 
-					// Add fields tracking if variant includes :fields
-					if (modifiers.has('fields') && trackFields.length > 0) {
+					// Add fields tracking if any variant includes :fields
+					if (modifiers.has('fields')) {
+						if (trackFields.length === 0) {
+							throw new NodeOperationError(
+								this.getNode(),
+								`The "${baseEvent}" event is set to track specific fields, but no fields are selected. Select at least one field to track, or choose the non-field-specific variant.`,
+							);
+						}
 						eventConfig.fields = trackFields;
 					}
 
-					// Add direction filter for thread events (e.g. :in, :out)
-					if (modifiers.has('in')) {
+					// Direction filter for thread events — only when exactly one direction
+					// is requested; both (or the plain variant) means no filter.
+					const wantsIn = modifiers.has('in');
+					const wantsOut = modifiers.has('out');
+					const wantsAll = modifiers.has(PLAIN);
+					if (wantsIn && !wantsOut && !wantsAll) {
 						eventConfig.direction = 'in';
-					} else if (modifiers.has('out')) {
+					} else if (wantsOut && !wantsIn && !wantsAll) {
 						eventConfig.direction = 'out';
 					}
 
@@ -391,7 +426,13 @@ export class ZohoDeskTrigger implements INodeType {
 					body.ignoreSourceId = options.ignoreSourceId;
 				}
 
-				const response = await zohoWebhookRequest(this, 'POST', '/webhooks', body) as IDataObject;
+				const response = await zohoWebhookRequest(this, 'POST', '/webhooks', body) as IDataObject | undefined;
+				if (!response?.id) {
+					throw new NodeOperationError(
+						this.getNode(),
+						'Zoho Desk did not return a webhook ID — the webhook may not have been registered.',
+					);
+				}
 
 				const staticData = this.getWorkflowStaticData('node');
 				staticData.webhookId = response.id;
@@ -421,32 +462,32 @@ export class ZohoDeskTrigger implements INodeType {
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
 		const webhookName = this.getWebhookName();
 
-		// Handle Zoho's validation GET request
+		// Handle Zoho's validation GET request — respond without executing the workflow
 		if (webhookName === 'setup') {
 			return {
 				webhookResponse: 'OK',
-				workflowData: [[{ json: { setup: true } }]],
 			};
 		}
 
 		// Handle actual event data (POST)
 		const body = this.getBodyData();
 		const headers = this.getHeaderData();
+		const eventType = headers['x-zoho-event'] as string | undefined;
 
-		const output: IDataObject = { ...body };
-
-		// Include Zoho event header if present
-		if (headers['x-zoho-event']) {
-			output.eventType = headers['x-zoho-event'] as string;
-		}
-
-		// Zoho may send events as an array
+		// Zoho may send events as an array (batched delivery)
 		if (Array.isArray(body)) {
 			return {
 				workflowData: [
-					body.map((item: IDataObject) => ({ json: item })),
+					body.map((item: IDataObject) => ({
+						json: eventType && item.eventType === undefined ? { ...item, eventType } : item,
+					})),
 				],
 			};
+		}
+
+		const output: IDataObject = { ...body };
+		if (eventType) {
+			output.eventType = eventType;
 		}
 
 		return {

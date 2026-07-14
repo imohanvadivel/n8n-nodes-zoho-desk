@@ -140,6 +140,7 @@ export class ZohoDesk implements INodeType {
 					returnData.push({ json: { error: (error as Error).message }, pairedItem: { item: i } });
 					continue;
 				}
+				if (error instanceof NodeOperationError) throw error;
 				throw new NodeOperationError(this.getNode(), error as Error, { itemIndex: i });
 			}
 		}

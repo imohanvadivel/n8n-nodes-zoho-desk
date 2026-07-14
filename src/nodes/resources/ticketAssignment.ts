@@ -641,9 +641,12 @@ export const executeTicketAssignment: ResourceExecuteHandler = async (context, o
 
 			// Step 1: Get the ticket to retrieve its skills
 			const ticket = await zohoApiRequest(context, 'GET', `/tickets/${encodeURIComponent(ticketId)}`, {}, { include: 'skills' }) as IDataObject;
-			const ticketSkills = (ticket.entitySkills ?? ticket.skills ?? []) as Array<{ id?: string; skillId?: string; name?: string }>;
+			// entitySkills entries may be plain skill-ID strings or objects depending on the API response
+			const ticketSkills = (ticket.entitySkills ?? ticket.skills ?? []) as Array<string | { id?: string; skillId?: string; name?: string }>;
 			const ticketSkillIds = new Set(
-				ticketSkills.map((s) => String(s.id ?? s.skillId ?? '')).filter(Boolean),
+				ticketSkills
+					.map((s) => (typeof s === 'string' ? s : String(s.id ?? s.skillId ?? '')))
+					.filter(Boolean),
 			);
 
 			if (ticketSkillIds.size === 0) {
@@ -830,7 +833,7 @@ export const executeTicketAssignment: ResourceExecuteHandler = async (context, o
 				if (holidayList && holidayList.holidayListId) {
 					try {
 						const hlResponse = await zohoApiRequest(context, 'GET',
-							`/holidayLists/${encodeURIComponent(String(holidayList.holidayListId))}`,
+							`/holidayList/${encodeURIComponent(String(holidayList.holidayListId))}`,
 						) as IDataObject;
 						const holidays = (hlResponse.holidays ?? []) as Array<{ from: string; to: string }>;
 						const isHoliday = holidays.some((h) => isInHolidayRange(monthDay, h.from, h.to));
@@ -950,7 +953,7 @@ export const executeTicketAssignment: ResourceExecuteHandler = async (context, o
 		}
 
 		default:
-			break;
+			throw new NodeOperationError(context.getNode(), `Unknown action: ticket:${operation}`, { itemIndex: i });
 	}
 
 	return returnData;

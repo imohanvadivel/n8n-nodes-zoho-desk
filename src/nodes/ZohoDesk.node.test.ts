@@ -448,16 +448,22 @@ describe('Ticket Resource', () => {
 		expect(lastCall!.endpoint).toBe('/tickets/t1/threads/th1/split');
 	});
 
-	test('getCountByField - GET /ticketsCountByFieldValues', async () => {
-		const { lastCall } = await executeNode({
+	test('unknown ticket operation throws', async () => {
+		const ctx = createMockExecuteFunctions({
 			resource: 'ticket',
-			operation: 'getCountByField',
-			countField: 'status',
-			countOptions: {},
+			operation: 'getCountByField', // moved to the ticketMetrics resource
+			ticketId: 't1',
 		});
-		expect(lastCall!.method).toBe('GET');
-		expect(lastCall!.endpoint).toBe('/ticketsCountByFieldValues');
-		expect(lastCall!.qs.field).toBe('status');
+		setupApiMock(ctx);
+		ctx.continueOnFail.mockReturnValue(false);
+
+		const node = new ZohoDesk();
+		try {
+			await node.execute.call(ctx);
+			expect(true).toBe(false); // Should not reach
+		} catch (e: any) {
+			expect(e.message).toContain('Unknown action: ticket:getCountByField');
+		}
 	});
 });
 
@@ -1911,7 +1917,7 @@ describe('Error Handling', () => {
 		}
 	});
 
-	test('unknown action throws error', async () => {
+	test('unknown resource throws error', async () => {
 		const ctx = createMockExecuteFunctions({
 			resource: 'nonexistent',
 			operation: 'doSomething',
@@ -1923,7 +1929,23 @@ describe('Error Handling', () => {
 			await node.execute.call(ctx);
 			expect(true).toBe(false);
 		} catch (e: any) {
-			expect(e.message).toContain('Unknown action');
+			expect(e.message).toContain('Unknown resource');
+		}
+	});
+
+	test('unknown operation on known resource throws error', async () => {
+		const ctx = createMockExecuteFunctions({
+			resource: 'comment',
+			operation: 'doSomething',
+		});
+		setupApiMock(ctx);
+
+		const node = new ZohoDesk();
+		try {
+			await node.execute.call(ctx);
+			expect(true).toBe(false);
+		} catch (e: any) {
+			expect(e.message).toContain('Unknown action: comment:doSomething');
 		}
 	});
 });
@@ -1939,13 +1961,13 @@ describe('Node Description', () => {
 		expect(node.description.usableAsTool).toBe(true);
 	});
 
-	test('has all 18 resource options', () => {
+	test('has all 19 resource options', () => {
 		const node = new ZohoDesk();
 		const resourceProp = node.description.properties.find(
 			(p: any) => p.name === 'resource',
 		) as any;
 		expect(resourceProp).toBeDefined();
-		expect(resourceProp.options.length).toBe(18);
+		expect(resourceProp.options.length).toBe(19);
 		const values = resourceProp.options.map((o: any) => o.value);
 		expect(values).toContain('record');
 		expect(values).toContain('ticket');

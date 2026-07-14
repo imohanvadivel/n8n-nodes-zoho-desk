@@ -1,4 +1,5 @@
 import type { INodeProperties, IDataObject } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 import type { ResourceExecuteHandler } from './types';
 import { zohoApiRequest } from '../helpers';
 
@@ -1217,7 +1218,10 @@ export const adminProperties: INodeProperties[] = [
 				name: 'folderId',
 				type: 'options',
 				default: '',
-				typeOptions: { loadOptionsMethod: 'getTemplateFolders' },
+				typeOptions: {
+					loadOptionsMethod: 'getTemplateFolders',
+					loadOptionsDependsOn: ['templateUpdateFields.departmentId'],
+				},
 				description: 'The folder for the template. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 			},
 			{
@@ -1225,7 +1229,10 @@ export const adminProperties: INodeProperties[] = [
 				name: 'fromId',
 				type: 'options',
 				default: '',
-				typeOptions: { loadOptionsMethod: 'getSupportEmailAddresses' },
+				typeOptions: {
+					loadOptionsMethod: 'getSupportEmailAddresses',
+					loadOptionsDependsOn: ['templateUpdateFields.departmentId'],
+				},
 				description: 'The support email address to send from. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 			},
 			{
@@ -1810,7 +1817,7 @@ export const executeAdmin: ResourceExecuteHandler = async (context, operation, i
 		}
 
 		default:
-			break;
+			throw new NodeOperationError(context.getNode(), `Unknown action: ${actionKey}`, { itemIndex: i });
 	}
 
 	return returnData;

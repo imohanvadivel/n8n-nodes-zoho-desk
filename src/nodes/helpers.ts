@@ -174,13 +174,28 @@ export async function zohoWebhookRequest(
 
 // ─── Reusable loadOptions methods ───────────────────────────────────────────
 
+// Zoho returns 204 No Content (undefined body) for empty result sets
+function responseData<T>(response: IDataObject | undefined): T[] {
+	const value = response?.data ?? [];
+	return Array.isArray(value) ? (value as T[]) : [];
+}
+
+// Template loaders serve both create (top-level templateDepartmentId) and
+// update (departmentId inside the templateUpdateFields collection)
+function templateDepartmentId(context: ILoadOptionsFunctions): string | undefined {
+	const topLevel = context.getCurrentNodeParameter('templateDepartmentId') as string | undefined;
+	if (topLevel) return topLevel;
+	const updateFields = context.getCurrentNodeParameter('templateUpdateFields') as IDataObject | undefined;
+	return updateFields?.departmentId as string | undefined;
+}
+
 // Factory for department-scoped agent dropdowns (avoids duplicating the same method for each param name)
 function agentsByDepartmentLoader(paramName: string) {
 	return async function (this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 		const departmentId = this.getCurrentNodeParameter(paramName) as string | undefined;
 		if (!departmentId) return [];
 		const response = await zohoLoadOptionsRequest(this, `/departments/${encodeURIComponent(departmentId)}/agents`);
-		return (response.data as Array<{ name: string; id: string }>).map((a) => ({
+		return responseData<{ name: string; id: string }>(response).map((a) => ({
 			name: a.name,
 			value: a.id,
 		}));
@@ -190,7 +205,7 @@ function agentsByDepartmentLoader(paramName: string) {
 export const sharedLoadOptions = {
 	async getModules(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 		const response = await zohoLoadOptionsRequest(this, '/organizationModules');
-		const modules = (response.data as Array<{ pluralLabel: string; displayLabel: string; apiName: string }>).map((m) => ({
+		const modules = responseData<{ pluralLabel: string; displayLabel: string; apiName: string }>(response).map((m) => ({
 			name: m.pluralLabel || m.displayLabel || m.apiName,
 			value: m.apiName,
 		}));
@@ -200,7 +215,7 @@ export const sharedLoadOptions = {
 
 	async getDepartments(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 		const response = await zohoLoadOptionsRequest(this, '/departments', { isEnabled: true });
-		return (response.data as Array<{ name: string; id: string }>).map((d) => ({
+		return responseData<{ name: string; id: string }>(response).map((d) => ({
 			name: d.name,
 			value: d.id,
 		}));
@@ -208,20 +223,9 @@ export const sharedLoadOptions = {
 
 	async getAgents(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 		const response = await zohoLoadOptionsRequest(this, '/agents', { limit: 200 });
-		return (response.data as Array<{ name: string; id: string }>).map((a) => ({
+		return responseData<{ name: string; id: string }>(response).map((a) => ({
 			name: a.name,
 			value: a.id,
-		}));
-	},
-
-	async getLayouts(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-		const module = this.getCurrentNodeParameter('module') as string | undefined;
-		const qs: Record<string, unknown> = {};
-		if (module) qs.module = module;
-		const response = await zohoLoadOptionsRequest(this, '/layouts', qs);
-		return (response.data as Array<{ layoutName: string; id: string }>).map((l) => ({
-			name: l.layoutName,
-			value: l.id,
 		}));
 	},
 
@@ -237,26 +241,18 @@ export const sharedLoadOptions = {
 
 	getAgentsByDepartmentForShiftAssign: agentsByDepartmentLoader('shiftDepartmentId'),
 
-	async getSkills(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-		const response = await zohoLoadOptionsRequest(this, '/skills');
-		return (response.data as Array<{ name: string; id: string }>).map((s) => ({
-			name: s.name,
-			value: s.id,
-		}));
-	},
-
 	async getSupportEmailAddresses(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-		const departmentId = this.getCurrentNodeParameter('templateDepartmentId') as string | undefined;
+		const departmentId = templateDepartmentId(this);
 		if (!departmentId) return [];
 		const response = await zohoLoadOptionsRequest(this, '/supportEmailAddress', { departmentId, limit: 100 });
-		return (response.data as Array<{ address: string; id: string }>).map((e) => ({
+		return responseData<{ address: string; id: string }>(response).map((e) => ({
 			name: e.address,
 			value: e.address,
 		}));
 	},
 
 	async getTemplateFolders(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-		const departmentId = this.getCurrentNodeParameter('templateDepartmentId') as string | undefined;
+		const departmentId = templateDepartmentId(this);
 		if (!departmentId) return [];
 		try {
 			const response = await zohoLoadOptionsRequest(this, '/templates', { departmentId, from: 1, limit: 1000 });
@@ -283,7 +279,7 @@ export const sharedLoadOptions = {
 		if (module) qs.module = module;
 		if (departmentId) qs.departmentId = departmentId;
 		const response = await zohoLoadOptionsRequest(this, '/layouts', qs);
-		return (response.data as Array<{ layoutName: string; id: string }>).map((l) => ({
+		return responseData<{ layoutName: string; id: string }>(response).map((l) => ({
 			name: l.layoutName,
 			value: l.id,
 		}));
@@ -350,7 +346,8 @@ export const sharedLoadOptions = {
 		const module = this.getCurrentNodeParameter('module') as string | undefined;
 		if (!module) return [];
 		const response = await zohoLoadOptionsRequest(this, '/fields', { module });
-		const fields = (response.data ?? response) as Array<{ displayLabel: string; apiName: string }>;
+		const fields = (response?.data ?? response ?? []) as Array<{ displayLabel: string; apiName: string }>;
+		if (!Array.isArray(fields)) return [];
 		return fields.map((f) => ({
 			name: f.displayLabel || f.apiName,
 			value: f.apiName,
@@ -677,7 +674,7 @@ const LOOKUP_ENDPOINTS: Record<string, LookupConfig> = {
 	productId: { endpoint: '/products', nameField: 'productName', limit: 100 },
 	associatedSupportPlanId: { endpoint: '/supportPlans', nameField: 'name', limit: 50, needsDepartmentId: true },
 	profileId: { endpoint: '/profiles', nameField: 'profileName', limit: 50 },
-	roleId: { endpoint: '/profiles', nameField: 'profileName', limit: 50 },
+	roleId: { endpoint: '/roles', nameField: 'name', limit: 50 },
 	channelExpert: { endpoint: '/channels', nameField: 'name', idField: 'name' },
 	entitySkills: { endpoint: '/skills', nameField: 'name', needsDepartmentId: true },
 };
@@ -825,7 +822,6 @@ export const sharedResourceMapping = {
 		]);
 		// Deduplicate fields that appear in multiple sections
 		const seen = new Set<string>();
-		const isLookupType = (t?: string) => t?.toLowerCase() === 'lookup';
 		const allFields = rawFields.filter((f) => {
 			if (excludeFields.has(f.apiName)) return false;
 			// Exclude department and layout fields — already handled by top-level dropdowns

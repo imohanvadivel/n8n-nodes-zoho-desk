@@ -1,4 +1,5 @@
 import type { INodeProperties, IDataObject, INodeExecutionData } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 import type { ResourceExecuteHandler } from './types';
 import { zohoApiRequest } from '../helpers';
 
@@ -34,25 +35,6 @@ export const commentProperties: INodeProperties[] = [
 		},
 		description: 'The module to add/update/delete comments on. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 	},
-	// ─── Department (scoped to comment) ──────────────────────────────────────
-	{
-		displayName: 'Department Name or ID',
-		name: 'departmentId',
-		type: 'options',
-		required: true,
-		typeOptions: { loadOptionsMethod: 'getDepartments' },
-		default: '',
-		displayOptions: {
-			show: {
-				resource: ['comment'],
-			},
-			hide: {
-				module: ['contacts', 'accounts'],
-				operation: ['get', 'delete', 'search'],
-			},
-		},
-		description: 'The department for the record. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
-	},
 	// ─── Record ID (scoped to comment) ───────────────────────────────────────
 	{
 		displayName: 'Record ID',
@@ -63,9 +45,6 @@ export const commentProperties: INodeProperties[] = [
 		displayOptions: {
 			show: {
 				resource: ['comment'],
-			},
-			hide: {
-				operation: ['create', 'search'],
 			},
 		},
 		description: 'The ID of the record',
@@ -278,6 +257,9 @@ export const executeComment: ResourceExecuteHandler = async (context, operation,
 			returnData.push(...executionData);
 			break;
 		}
+
+		default:
+			throw new NodeOperationError(context.getNode(), `Unknown action: comment:${operation}`, { itemIndex: i });
 	}
 
 	return returnData;
