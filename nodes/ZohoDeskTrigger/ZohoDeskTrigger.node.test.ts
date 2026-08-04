@@ -1,25 +1,27 @@
-import { test, expect, describe, mock } from 'bun:test';
+// describe/test/expect/beforeEach are Bun test globals, and jest.fn provides the
+// mocks — imported from nowhere on purpose: n8n's community-node linter rejects a
+// 'bun:test' import outright (no dependencies allowed), and it scans this source.
 import { ZohoDeskTrigger } from './ZohoDeskTrigger.node';
 
 // ─── Mock helpers ────────────────────────────────────────────────────────────
 
 function createMockHookFunctions(params: Record<string, unknown> = {}, staticData: Record<string, unknown> = {}) {
-	const requestOAuth2 = mock(() => Promise.resolve({ id: 'wh-1' }));
+	const requestOAuth2 = jest.fn(() => Promise.resolve({ id: 'wh-1' }));
 
 	const ctx: any = {
-		getNodeParameter: mock((name: string, fallback?: unknown) => {
+		getNodeParameter: jest.fn((name: string, fallback?: unknown) => {
 			if (name in params) return params[name];
 			if (fallback !== undefined) return fallback;
 			return '';
 		}),
-		getNodeWebhookUrl: mock(() => 'https://n8n.example.com/webhook/abc'),
-		getWorkflow: mock(() => ({ id: 'wf-1', name: 'My Workflow' })),
-		getWorkflowStaticData: mock(() => staticData),
-		getNode: mock(() => ({ name: 'Zoho Desk Trigger' })),
-		getCredentials: mock(() =>
+		getNodeWebhookUrl: jest.fn(() => 'https://n8n.example.com/webhook/abc'),
+		getWorkflow: jest.fn(() => ({ id: 'wf-1', name: 'My Workflow' })),
+		getWorkflowStaticData: jest.fn(() => staticData),
+		getNode: jest.fn(() => ({ name: 'Zoho Desk Trigger' })),
+		getCredentials: jest.fn(() =>
 			Promise.resolve({ orgId: 'test-org-123', baseUrl: 'https://desk.zoho.com/api/v1' }),
 		),
-		logger: { warn: mock(() => {}), info: mock(() => {}), error: mock(() => {}), debug: mock(() => {}) },
+		logger: { warn: jest.fn(() => {}), info: jest.fn(() => {}), error: jest.fn(() => {}), debug: jest.fn(() => {}) },
 		helpers: { requestOAuth2 },
 	};
 	return ctx;
@@ -184,9 +186,9 @@ function createMockWebhookFunctions(options: {
 	headers?: Record<string, string>;
 }) {
 	return {
-		getWebhookName: mock(() => options.webhookName),
-		getBodyData: mock(() => options.body),
-		getHeaderData: mock(() => options.headers ?? {}),
+		getWebhookName: jest.fn(() => options.webhookName),
+		getBodyData: jest.fn(() => options.body),
+		getHeaderData: jest.fn(() => options.headers ?? {}),
 	} as any;
 }
 

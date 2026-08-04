@@ -1,4 +1,6 @@
-import { test, expect, describe, mock, beforeEach } from 'bun:test';
+// describe/test/expect/beforeEach are Bun test globals, and jest.fn provides the
+// mocks — imported from nowhere on purpose: n8n's community-node linter rejects a
+// 'bun:test' import outright (no dependencies allowed), and it scans this source.
 import { ZohoDesk } from './ZohoDesk.node';
 import {
 	zohoApiRequest,
@@ -12,35 +14,35 @@ import {
 // ─── Mock helpers ────────────────────────────────────────────────────────────
 
 function createMockExecuteFunctions(params: Record<string, unknown> = {}) {
-	const requestOAuth2 = mock(() => Promise.resolve({}));
-	const returnJsonArray = mock((data: unknown) => {
+	const requestOAuth2 = jest.fn(() => Promise.resolve({}));
+	const returnJsonArray = jest.fn((data: unknown) => {
 		if (Array.isArray(data)) return data.map((d) => ({ json: d }));
 		return [{ json: data }];
 	});
-	const constructExecutionMetaData = mock((items: unknown[], meta: unknown) => items);
-	const getNode = mock(() => ({ name: 'Zoho Desk' }));
-	const continueOnFail = mock(() => false);
+	const constructExecutionMetaData = jest.fn((items: unknown[], meta: unknown) => items);
+	const getNode = jest.fn(() => ({ name: 'Zoho Desk' }));
+	const continueOnFail = jest.fn(() => false);
 
-	const getNodeParameter = mock((name: string, _index: number, fallback?: unknown) => {
+	const getNodeParameter = jest.fn((name: string, _index: number, fallback?: unknown) => {
 		if (name in params) return params[name];
 		if (fallback !== undefined) return fallback;
 		return '';
 	});
 
-	const getCredentials = mock(() =>
+	const getCredentials = jest.fn(() =>
 		Promise.resolve({
 			orgId: 'test-org-123',
 			baseUrl: 'https://desk.zoho.com/api/v1',
 		}),
 	);
 
-	const getInputData = mock(() => [{ json: {} }]);
+	const getInputData = jest.fn(() => [{ json: {} }]);
 
-	const assertBinaryData = mock(() => ({
+	const assertBinaryData = jest.fn(() => ({
 		fileName: 'test.pdf',
 		mimeType: 'application/pdf',
 	}));
-	const getBinaryDataBuffer = mock(() => Promise.resolve(Buffer.from('test')));
+	const getBinaryDataBuffer = jest.fn(() => Promise.resolve(Buffer.from('test')));
 
 	const ctx: any = {
 		getNodeParameter,

@@ -393,8 +393,15 @@ One-time npm setup (trusted publisher, so no token is stored) is documented at t
 ### Verification notes
 
 - `n8n.strict` is `false` in `package.json` because `eslint.config.mjs` adds one deviation from n8n's
-  template: test files are excluded from linting. They import `bun:test`, which the cloud-only
-  `no-restricted-imports` rule forbids, and they are never published (`files: ["dist"]`). Every n8n rule,
-  including the cloud-support set, still applies in full to all shipped code.
+  template: test files are excluded, since their mock contexts use `any`. Every n8n rule, including the
+  cloud-support set, still applies in full to all shipped code.
 - Verified nodes may not have runtime dependencies — keep `dependencies` empty.
-- Check the published package with `npx @n8n/scan-community-package @mohanvadivel/n8n-nodes-zoho-desk`.
+- **The test files must not `import` anything from `bun:test`.** The scanner clones this repository and
+  lints the source, and the cloud-only `no-restricted-imports` rule fails any `bun:test` import — a local
+  eslint ignore does not help. `describe`, `test`, `expect` and `beforeEach` are Bun globals, and `jest.fn`
+  covers the mocks, so no import is needed.
+- Check a published version with `npx @n8n/scan-community-package @mohanvadivel/n8n-nodes-zoho-desk`. It
+  needs a TTY to print anything; if it exits silently, run its CLI directly:
+  `node node_modules/@n8n/scan-community-package/scanner/cli.mjs <package>`. It verifies provenance, then
+  lints the GitHub source that the published version's provenance points at — so fixing a violation
+  requires publishing a new version, not just pushing a commit.
