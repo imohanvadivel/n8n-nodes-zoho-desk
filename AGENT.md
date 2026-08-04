@@ -6,33 +6,48 @@ This document provides all context needed to work on this repository. It covers 
 
 ## Tooling
 
-Default to **Bun** instead of Node.js.
+The toolchain is **`@n8n/node-cli`** (`n8n-node build` / `lint` / `release`), which is what n8n's
+community-node verification expects. Tests run on **Bun**; CI installs with **npm** (`package-lock.json`
+is the committed lockfile — `npm ci` is what the workflows use).
 
-- `bun run build` — compile TypeScript and copy static assets to `dist/`
-- `bun run dev` — watch mode (`tsc --watch`)
+- `npm run build` — `n8n-node build` (clean, `tsc`, copy icons) plus a copy of the `*.node.json` codex files
+- `npm run build:watch` — watch mode (`tsc --watch`)
+- `npm run lint` / `npm run lint:fix` — the n8n node linter (eslint 9 flat config)
 - `bun test` — run tests
-- `bun install` — install dependencies
+- `npm run release` — cut a release (see "Releasing" below)
+- Locally, install with `npm install --ignore-scripts`: `@n8n/node-cli` pulls in `isolated-vm`, which has
+  no prebuilt binary for Node 26 and fails to compile. Nothing in build/lint/test loads it. CI pins Node 24,
+  where the prebuild exists, so plain `npm ci` works there.
 - After building, restart n8n with `pm2 restart n8n` (never kill by port — Tailscale funnel shares port 5678)
 
 ---
 
 ## Architecture Overview
 
-Single-node, resource/operation pattern with 18 resources:
+Single-node, resource/operation pattern with 18 resources. The layout follows n8n's convention:
+`nodes/` and `credentials/` at the repo root, one directory per node, icons in `icons/`.
 
 ```
-src/
-  index.ts                              # Entry point (exports node + credential classes)
-  credentials/
-    ZohoDeskOAuth2Api.credentials.ts    # OAuth2 credential with data center support
-  nodes/
-    ZohoDesk.node.ts                    # Main node: resources, operations, properties, execute()
-    ZohoDeskTrigger.node.ts             # Webhook trigger node
-    helpers.ts                          # API helpers, loadOptions, resourceMapping, utilities
-    zohoDesk.svg / zohoDesk.png         # Node icons (lowercase — must match `file:zohoDesk.svg`)
-    ZohoDesk.node.json                  # Codex file (categories)
-    ZohoDeskTrigger.node.json           # Trigger codex file
+index.ts                                  # Entry point (exports node classes)
+icons/
+  zohoDesk.svg / zohoDesk.dark.svg        # Light and dark node/credential icons
+credentials/
+  ZohoDeskOAuth2Api.credentials.ts        # OAuth2 credential with data center support
+nodes/
+  helpers.ts                              # API helpers, loadOptions, resourceMapping, utilities
+  resources/                               # Per-resource properties + execute handlers
+  ZohoDesk/
+    ZohoDesk.node.ts                       # Main node: resources, operations, properties, execute()
+    ZohoDesk.node.json                     # Codex file (categories)
+    ZohoDesk.node.test.ts
+  ZohoDeskTrigger/
+    ZohoDeskTrigger.node.ts                # Webhook trigger node
+    ZohoDeskTrigger.node.json              # Trigger codex file
+    ZohoDeskTrigger.node.test.ts
 ```
+
+The per-node directories are required by the linter (`node-dirname-against-convention`), and the paths in
+`package.json`'s `n8n.nodes` array must match the built output (`dist/nodes/ZohoDesk/ZohoDesk.node.js`).
 
 **Key files:**
 - `ZohoDesk.node.ts` — All resources, operations, UI properties, and the `execute()` switch statement
@@ -319,9 +334,12 @@ All use GET on `/ticketsCount`, `/ticketsCountByFieldValues`, or `/dashboards/{m
 ### Build Process
 
 ```bash
-bun run build
-# Runs: tsc && rsync -a --include='*.png' --include='*.svg' --include='*.json' --exclude='*' src/nodes/ dist/nodes/
+npm run build
+# Runs: n8n-node build  (rimraf dist, tsc, copy **/*.{png,svg})
+#   &&  rsync -am --include='*/' --include='*.node.json' --exclude='*' nodes/ dist/nodes/
 ```
+
+`n8n-node build` copies icons but *not* the `*.node.json` codex files, hence the extra rsync step.
 
 ### Common Pitfalls
 
@@ -348,3 +366,35 @@ bun run build
 ### Error Handling
 
 Zoho errors parsed from: `error.cause.body`, `error.description`, or regex-extracted JSON from `error.message`. Formatted as: `"ERRORCODE: message (fieldName: errorMessage)"`. Node supports `continueOnFail()` mode.
+
+The formatted message is thrown as a `NodeApiError` (required by the linter's `require-node-api-error`;
+plain `Error` loses the HTTP context in the n8n UI). In `execute()`, `NodeApiError` instances are passed
+back through `new NodeApiError(...)` and everything else through `new NodeOperationError(...)`: both
+constructors return the error untouched when given an instance of their own class, so nothing is
+double-wrapped and API failures keep their HTTP code.
+
+---
+
+## Releasing
+
+The package is published to npm **only** from CI, via `.github/workflows/publish.yml`, with an npm
+provenance statement — n8n requires this for verified community nodes and rejects packages published
+from a local machine. `prepublishOnly` (`n8n-node prerelease`) blocks a stray local `npm publish`.
+
+```bash
+npm run release   # from a clean `main` with an upstream set
+```
+
+This lints, builds, prompts for the version bump, updates the changelog, commits, tags, and pushes. The
+tag push triggers `publish.yml`, which runs lint + build again and publishes with `--provenance`.
+
+One-time npm setup (trusted publisher, so no token is stored) is documented at the top of `publish.yml`.
+
+### Verification notes
+
+- `n8n.strict` is `false` in `package.json` because `eslint.config.mjs` adds one deviation from n8n's
+  template: test files are excluded from linting. They import `bun:test`, which the cloud-only
+  `no-restricted-imports` rule forbids, and they are never published (`files: ["dist"]`). Every n8n rule,
+  including the cloud-support set, still applies in full to all shipped code.
+- Verified nodes may not have runtime dependencies — keep `dependencies` empty.
+- Check the published package with `npx @n8n/scan-community-package @mohanvadivel/n8n-nodes-zoho-desk`.

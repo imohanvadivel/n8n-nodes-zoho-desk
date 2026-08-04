@@ -13,14 +13,14 @@ export const threadProperties: INodeProperties[] = [
 		required: true,
 		displayOptions: { show: { resource: ['thread'] } },
 		options: [
-			{ name: 'Get Thread', value: 'getThread', action: 'Get Thread', description: 'Get a single thread by ID' },
-			{ name: 'List Threads', value: 'getAll', action: 'List Threads', description: 'List all threads on a ticket' },
-			{ name: 'List Conversations', value: 'getConversations', action: 'List Conversations', description: 'List all conversations (threads + comments) on a ticket' },
-			{ name: 'Get Original Content', value: 'getOriginalContent', action: 'Get Original Content', description: 'Get original mail content with headers' },
-			{ name: 'Send Reply', value: 'sendReply', action: 'Send Reply', description: 'Send a reply (email, facebook, twitter, or forum)' },
-			{ name: 'Draft Reply', value: 'draftReply', action: 'Draft Reply', description: 'Create a draft reply (email, facebook, or forum)' },
-			{ name: 'Update Draft', value: 'updateDraft', action: 'Update Draft', description: 'Update an existing draft reply' },
-			{ name: 'Send for Review', value: 'sendForReview', action: 'Send for Review', description: 'Send a draft thread for review' },
+			{ name: 'Draft Reply', value: 'draftReply', action: 'Draft reply', description: 'Create a draft reply (email, facebook, or forum)' },
+			{ name: 'Get Many', value: 'getAll', action: 'List threads', description: 'List many threads on a ticket' },
+			{ name: 'Get Original Content', value: 'getOriginalContent', action: 'Get original content', description: 'Get original mail content with headers' },
+			{ name: 'Get Thread', value: 'getThread', action: 'Get thread', description: 'Get a single thread by ID' },
+			{ name: 'List Conversations', value: 'getConversations', action: 'List conversations', description: 'List all conversations (threads + comments) on a ticket' },
+			{ name: 'Send for Review', value: 'sendForReview', action: 'Send for review', description: 'Send a draft thread for review' },
+			{ name: 'Send Reply', value: 'sendReply', action: 'Send reply', description: 'Send a reply (email, facebook, twitter, or forum)' },
+			{ name: 'Update Draft', value: 'updateDraft', action: 'Update draft', description: 'Update an existing draft reply' },
 		],
 		default: 'getAll',
 	},
@@ -94,7 +94,7 @@ export const threadProperties: INodeProperties[] = [
 	},
 	// ─── From Email Address ───────────────────────────────────────────────────
 	{
-		displayName: 'From Email Address',
+		displayName: 'From Email Address Name or ID',
 		name: 'fromEmailAddress',
 		type: 'options',
 		required: true,
@@ -106,7 +106,7 @@ export const threadProperties: INodeProperties[] = [
 				threadChannel: ['EMAIL', 'FORUMS'],
 			},
 		},
-		description: 'The support email address to send from (must be configured in your portal). Choose from the list, or specify using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+		description: 'The support email address to send from (must be configured in your portal). Choose from the list, or specify using an <a href="https://docs.n8n.io/code/expressions/">expression</a>. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 	},
 	// ─── To ───────────────────────────────────────────────────────────────────
 	{
@@ -136,11 +136,12 @@ export const threadProperties: INodeProperties[] = [
 		},
 		options: [
 			{
-				displayName: 'CC',
-				name: 'cc',
+				displayName: 'Attachment IDs',
+				name: 'attachmentIds',
 				type: 'string',
 				default: '',
-				description: 'CC email addresses, comma-separated (email only)',
+				placeholder: '12345,67890',
+				description: 'Comma-separated attachment IDs to include (email only). Upload attachments first via Ticket Attachment > Create.',
 			},
 			{
 				displayName: 'BCC',
@@ -148,6 +149,13 @@ export const threadProperties: INodeProperties[] = [
 				type: 'string',
 				default: '',
 				description: 'BCC email addresses, comma-separated (email only)',
+			},
+			{
+				displayName: 'CC',
+				name: 'cc',
+				type: 'string',
+				default: '',
+				description: 'CC email addresses, comma-separated (email only)',
 			},
 			{
 				displayName: 'Content Type',
@@ -159,6 +167,24 @@ export const threadProperties: INodeProperties[] = [
 					{ name: 'Plain Text', value: 'plainText' },
 				],
 				description: 'The format of the content',
+			},
+			{
+				displayName: 'Direction',
+				name: 'direction',
+				type: 'options',
+				default: 'out',
+				options: [
+					{ name: 'Outgoing', value: 'out' },
+					{ name: 'Incoming', value: 'in' },
+				],
+				description: 'Whether the thread is incoming or outgoing',
+			},
+			{
+				displayName: 'In Reply To Thread ID',
+				name: 'inReplyToThreadId',
+				type: 'string',
+				default: '',
+				description: 'ID of the thread this is a reply to (email only)',
 			},
 			{
 				displayName: 'Is Forward',
@@ -173,32 +199,6 @@ export const threadProperties: INodeProperties[] = [
 				type: 'boolean',
 				default: false,
 				description: 'Whether the thread is private. Forwarded threads are always private.',
-			},
-			{
-				displayName: 'In Reply To Thread ID',
-				name: 'inReplyToThreadId',
-				type: 'string',
-				default: '',
-				description: 'ID of the thread this is a reply to (email only)',
-			},
-			{
-				displayName: 'Attachment IDs',
-				name: 'attachmentIds',
-				type: 'string',
-				default: '',
-				placeholder: '12345,67890',
-				description: 'Comma-separated attachment IDs to include (email only). Upload attachments first via Ticket Attachment > Create.',
-			},
-			{
-				displayName: 'Direction',
-				name: 'direction',
-				type: 'options',
-				default: 'out',
-				options: [
-					{ name: 'Outgoing', value: 'out' },
-					{ name: 'Incoming', value: 'in' },
-				],
-				description: 'Whether the thread is incoming or outgoing',
 			},
 			{
 				displayName: 'Send Immediately',
@@ -233,9 +233,9 @@ export const threadProperties: INodeProperties[] = [
 				displayName: 'Limit',
 				name: 'limit',
 				type: 'number',
-				default: 25,
+				default: 50,
 				typeOptions: { minValue: 1, maxValue: 100 },
-				description: 'Max number of threads to return',
+				description: 'Max number of results to return',
 			},
 			{
 				displayName: 'Offset',

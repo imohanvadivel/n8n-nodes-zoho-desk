@@ -1,5 +1,6 @@
 import type {
 	IAuthenticateGeneric,
+	Icon,
 	ICredentialTestRequest,
 	ICredentialType,
 	INodeProperties,
@@ -9,6 +10,7 @@ export class ZohoDeskOAuth2Api implements ICredentialType {
 	name = 'zohoDeskOAuth2Api';
 	extends = ['oAuth2Api'];
 	displayName = 'Zoho Desk OAuth2 API';
+	icon: Icon = { light: 'file:../icons/zohoDesk.svg', dark: 'file:../icons/zohoDesk.dark.svg' };
 	documentationUrl = 'https://desk.zoho.com/DeskAPIDocument#Introduction';
 
 	properties: INodeProperties[] = [

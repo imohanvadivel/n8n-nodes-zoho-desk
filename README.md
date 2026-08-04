@@ -1,4 +1,4 @@
-# n8n-nodes-zohodesk
+# @mohanvadivel/n8n-nodes-zoho-desk
 
 Zoho Desk community nodes for [n8n](https://n8n.io/).
 
@@ -6,7 +6,7 @@ Zoho Desk community nodes for [n8n](https://n8n.io/).
 
 Provides 19 resources covering tickets, contacts, agents, threads, tags, skills, approvals, time tracking, and more. Also, a webhook trigger for real-time events.
 
-[Installation](#installation) | [Credentials](#credentials) | [Resources](#resources) | [Trigger](#trigger) | [Compatibility](#compatibility) | [License](#license)
+[Installation](#installation) | [Credentials](#credentials) | [Usage](#usage) | [Resources](#resources) | [Trigger](#trigger) | [Compatibility](#compatibility) | [License](#license)
 
 ---
 
@@ -17,7 +17,7 @@ Follow the [n8n community node installation guide](https://docs.n8n.io/integrati
 In the n8n UI: **Settings > Community Nodes > Install** and enter:
 
 ```
-n8n-nodes-zohodesk
+@mohanvadivel/n8n-nodes-zoho-desk
 ```
 
 ---
@@ -70,6 +70,29 @@ Desk.events.ALL     Desk.calls.ALL        Desk.activities.ALL
 Desk.products.ALL   Desk.basic.ALL        Desk.settings.ALL
 Desk.search.READ    Desk.custommodule.ALL
 ```
+
+---
+
+## Usage
+
+Every operation is reached by picking a **Resource** and an **Operation** on the node, then filling in the
+fields n8n shows for that pair. Two typical flows:
+
+**Auto-reply to new tickets**
+
+1. **Zoho Desk Trigger** — Module `Ticket`, Event `Ticket_Add`. Fires as tickets arrive.
+2. **Zoho Desk** — Resource `Thread`, Operation `Reply`. Set *Ticket ID* to
+   `{{ $json.ticketId }}` and write the reply body.
+
+**Create a ticket from another system**
+
+1. Any trigger (webhook, form, schedule).
+2. **Zoho Desk** — Resource `Record`, Operation `Create`, Module `Tickets`. Pick the department and
+   layout, then map the fields — the node loads the real field list from your Zoho Desk layout, so
+   custom fields appear alongside standard ones.
+
+Both nodes support n8n expressions in every field, and the main node can be used as an
+[AI agent tool](https://docs.n8n.io/advanced-ai/intro-tutorial/) (`usableAsTool`).
 
 ---
 
@@ -338,10 +361,10 @@ Features:
 ## Compatibility
 
 - Tested with n8n version 1.x and above
-- Requires Node.js >= 18.10
+- Requires Node.js >= 20.19
 
 ---
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE.md)

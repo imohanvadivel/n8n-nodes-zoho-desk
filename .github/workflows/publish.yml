@@ -1,0 +1,79 @@
+# Publishes this n8n community node package to npm on every version tag push.
+#
+# n8n requires community nodes to be published via GitHub Actions with npm
+# provenance statements (mandatory since May 1 2026). Provenance lets anyone
+# cryptographically verify that a package was built by this exact workflow, from
+# this exact repository and commit.
+#
+# ─── ONE-TIME SETUP ────────────────────────────────────────────────────────────
+#
+# Option A — OIDC Trusted Publishing (recommended, no long-lived secrets):
+#   1. Log in to npmjs.com and open this package's settings.
+#   2. Under "Publish access" → "Trusted Publishers", click "Add a publisher".
+#   3. Select GitHub Actions and fill in:
+#        Repository owner: imohanvadivel
+#        Repository name:  n8n-nodes-zoho-desk
+#        Workflow name:    publish.yml
+#        Environment:      (leave blank)
+#   4. Leave NPM_TOKEN unset in this repository — GitHub's OIDC token is used
+#      instead, so no secret ever touches the repo settings.
+#
+# Option B — npm Granular Access Token (fallback):
+#   1. On npmjs.com: Access Tokens → Generate New Token → Granular Access Token,
+#      scoped to this package with "Read and write" permission.
+#   2. In GitHub: Settings → Secrets and variables → Actions → New secret named
+#      NPM_TOKEN.
+#
+# ─── RELEASE PROCESS ───────────────────────────────────────────────────────────
+#
+#   npm run release
+#
+# Runs from a clean `main`: lints, builds, prompts for the version bump, updates
+# the changelog, commits, tags and pushes — which triggers this workflow.
+
+name: Publish
+
+on:
+  push:
+    tags:
+      # Matches 1.1.0, 1.2.3, 2.0.0-rc.1, etc.
+      - '*.*.*'
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+
+    permissions:
+      # Required to mint an OIDC token for npm provenance attestation.
+      id-token: write
+      # Scoped down from the default (write) for least-privilege publishing.
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        # --ignore-scripts: @n8n/node-cli pulls in isolated-vm, a native module
+        # only needed by `n8n-node dev`. Lint, build and publish never load it,
+        # so skipping its build keeps installs fast and Node-version independent.
+        run: npm ci --ignore-scripts
+
+      - name: Release
+        # Publishes to npm with a provenance attestation (needs id-token: write).
+        # Lint and build run automatically as part of the release process.
+        #
+        # Option A (OIDC): leave NPM_TOKEN unset — the token line is a no-op and
+        #   npm uses the OIDC exchange instead.
+        # Option B (token): set NPM_TOKEN in repo secrets — written to .npmrc here.
+        run: |
+          [ -n "$NPM_TOKEN" ] && npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+          npm run release
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

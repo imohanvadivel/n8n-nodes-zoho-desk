@@ -1,0 +1,40 @@
+# Runs the same checks n8n's verification pipeline expects: the n8n node linter,
+# a clean TypeScript build, and the test suite.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    name: Lint, build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        # See publish.yml for why install scripts are skipped.
+        run: npm ci --ignore-scripts
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      # The test suite uses bun's built-in test runner.
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Test
+        run: bun test

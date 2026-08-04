@@ -19,6 +19,7 @@ function createMockHookFunctions(params: Record<string, unknown> = {}, staticDat
 		getCredentials: mock(() =>
 			Promise.resolve({ orgId: 'test-org-123', baseUrl: 'https://desk.zoho.com/api/v1' }),
 		),
+		logger: { warn: mock(() => {}), info: mock(() => {}), error: mock(() => {}), debug: mock(() => {}) },
 		helpers: { requestOAuth2 },
 	};
 	return ctx;
@@ -136,6 +137,42 @@ describe('Trigger checkExists', () => {
 		const exists = await trigger.webhookMethods.default.checkExists.call(ctx);
 		expect(exists).toBe(true);
 		expect(staticData.webhookId).toBe('wh-1');
+	});
+});
+
+// ─── delete ──────────────────────────────────────────────────────────────────
+
+describe('Trigger delete', () => {
+	test('deletes the webhook and clears the stored ID', async () => {
+		const staticData: Record<string, unknown> = { webhookId: 'wh-1' };
+		const ctx = createMockHookFunctions({}, staticData);
+		const trigger = new ZohoDeskTrigger();
+		const deleted = await trigger.webhookMethods.default.delete.call(ctx);
+		expect(deleted).toBe(true);
+		expect(staticData.webhookId).toBeUndefined();
+		const [, opts] = ctx.helpers.requestOAuth2.mock.calls[0];
+		expect(opts.method).toBe('DELETE');
+		expect(opts.uri).toContain('/webhooks/wh-1');
+	});
+
+	test('no-ops when no webhook ID is stored', async () => {
+		const ctx = createMockHookFunctions({}, {});
+		const trigger = new ZohoDeskTrigger();
+		expect(await trigger.webhookMethods.default.delete.call(ctx)).toBe(true);
+		expect(ctx.helpers.requestOAuth2).not.toHaveBeenCalled();
+	});
+
+	test('logs and still deactivates when Zoho rejects the delete', async () => {
+		const staticData: Record<string, unknown> = { webhookId: 'wh-1' };
+		const ctx = createMockHookFunctions({}, staticData);
+		ctx.helpers.requestOAuth2.mockImplementation(() => {
+			throw new Error('404 - NOT_FOUND: The webhook does not exist');
+		});
+		const trigger = new ZohoDeskTrigger();
+		expect(await trigger.webhookMethods.default.delete.call(ctx)).toBe(true);
+		expect(staticData.webhookId).toBeUndefined();
+		expect(ctx.logger.warn).toHaveBeenCalled();
+		expect(ctx.logger.warn.mock.calls[0][0]).toContain('wh-1');
 	});
 });
 

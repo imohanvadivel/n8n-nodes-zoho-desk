@@ -6,8 +6,10 @@ import type {
 	INodePropertyOptions,
 	IDataObject,
 	FieldType,
+	JsonObject,
 	ResourceMapperFields,
 } from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
 
 // ─── Base URL Resolution ────────────────────────────────────────────────────
 // The ZohoDeskOAuth2Api credential computes baseUrl from the datacenter field
@@ -88,7 +90,7 @@ export async function zohoApiRequest(
 			// Could not parse error body — use original message
 		}
 
-		throw new Error(message);
+		throw new NodeApiError(context.getNode(), error as JsonObject, { message });
 	}
 }
 
@@ -168,7 +170,7 @@ export async function zohoWebhookRequest(
 			message += '. Note: Zoho validates the webhook URL by sending a GET request. Ensure your n8n instance is publicly accessible (not localhost).';
 		}
 
-		throw new Error(message);
+		throw new NodeApiError(context.getNode(), error as JsonObject, { message });
 	}
 }
 
@@ -621,7 +623,7 @@ export const sharedLoadOptions = {
 		// Modules that do NOT have a search endpoint
 		const NO_SEARCH_MODULES = new Set(['contracts']);
 		if (NO_SEARCH_MODULES.has(module)) {
-			return [{ name: '⚠ Search not supported for this module', value: '_unsupported' }];
+			return [{ name: '⚠ Search Not Supported for This Module', value: '_unsupported' }];
 		}
 
 		// For known modules, return specific search fields; for custom modules, return a generic set
@@ -631,7 +633,7 @@ export const sharedLoadOptions = {
 		// Custom modules only support time-range filters, no field-level search
 		if (isCustomModule(module)) {
 			return [
-				{ name: '⚠ Field search not supported — use time range filters in Options', value: '_unsupported' },
+				{ name: '⚠ Field Search Not Supported — Use Time Range Filters in Options', value: '_unsupported' },
 			];
 		}
 

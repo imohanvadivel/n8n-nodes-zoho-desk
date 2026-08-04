@@ -13,6 +13,10 @@
   ],
   "license": "MIT",
   "homepage": "https://github.com/imohanvadivel/n8n-nodes-zoho-desk",
+  "author": {
+    "name": "mohanvadivel",
+    "email": "mohan@mohanvadivel.com"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/imohanvadivel/n8n-nodes-zoho-desk.git"
@@ -22,39 +26,42 @@
   },
   "main": "dist/index.js",
   "engines": {
-    "node": ">=18.10"
+    "node": ">=20.19"
   },
   "scripts": {
-    "build": "tsc && rsync -a --include='*.png' --include='*.svg' --include='*.json' --exclude='*' src/nodes/ dist/nodes/",
-    "dev": "tsc --watch",
+    "build": "n8n-node build && rsync -am --include='*/' --include='*.node.json' --exclude='*' nodes/ dist/nodes/",
+    "build:watch": "tsc --watch",
+    "dev": "n8n-node dev",
     "test": "bun test",
-    "lint": "eslint . --ext .ts,.json",
-    "lintfix": "eslint . --ext .ts,.json --fix"
+    "lint": "n8n-node lint",
+    "lint:fix": "n8n-node lint --fix",
+    "release": "n8n-node release",
+    "prepublishOnly": "n8n-node prerelease"
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/asset"
   ],
   "n8n": {
     "n8nNodesApiVersion": 1,
+    "strict": false,
     "credentials": [
       "dist/credentials/ZohoDeskOAuth2Api.credentials.js"
     ],
     "nodes": [
-      "dist/nodes/ZohoDesk.node.js",
-      "dist/nodes/ZohoDeskTrigger.node.js"
+      "dist/nodes/ZohoDesk/ZohoDesk.node.js",
+      "dist/nodes/ZohoDeskTrigger/ZohoDeskTrigger.node.js"
     ]
   },
   "devDependencies": {
+    "@n8n/node-cli": "^0.42.0",
     "@types/bun": "^1.2.0",
-    "@typescript-eslint/parser": "^8.57.1",
-    "eslint": "8",
-    "eslint-plugin-n8n-nodes-base": "^1.16.6",
-    "jsonc-eslint-parser": "^3.1.0",
-    "n8n-workflow": ">=1.0.0",
-    "typescript": "^5.3.3"
+    "eslint": "^9.39.4",
+    "n8n-workflow": "^2.13.0",
+    "release-it": "^21.0.1",
+    "typescript": "^5.9.3"
   },
   "peerDependencies": {
-    "n8n-workflow": ">=1.0.0"
-  },
-  "dependencies": {}
+    "n8n-workflow": "*"
+  }
 }

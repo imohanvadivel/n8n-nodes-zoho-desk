@@ -5,7 +5,6 @@
     "module": "CommonJS",
     "moduleResolution": "node",
     "outDir": "./dist",
-    "rootDir": "./src",
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
@@ -21,7 +20,9 @@
     "noUnusedParameters": false
   },
   "include": [
-    "src/**/*.ts"
+    "credentials/**/*.ts",
+    "nodes/**/*.ts",
+    "index.ts"
   ],
   "exclude": [
     "node_modules",

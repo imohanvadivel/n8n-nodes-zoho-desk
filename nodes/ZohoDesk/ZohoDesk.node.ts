@@ -3,27 +3,28 @@ import type {
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
+	JsonObject,
 } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
+import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 import {
 	sharedLoadOptions,
 	sharedResourceMapping,
-} from './helpers';
-import { resourceProperties, executeHandlers } from './resources';
+} from '../helpers';
+import { resourceProperties, executeHandlers } from '../resources';
 
 export class ZohoDesk implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Zoho Desk',
 		name: 'zohoDesk',
-		icon: 'file:zohoDesk.svg',
+		icon: { light: 'file:../../icons/zohoDesk.svg', dark: 'file:../../icons/zohoDesk.dark.svg' },
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["resource"] + ": " + $parameter["operation"]}}',
 		description: 'Interact with Zoho Desk API',
 		defaults: { name: 'Zoho Desk' },
 		usableAsTool: true,
-		inputs: ['main'],
-		outputs: ['main'],
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [{ name: 'zohoDeskOAuth2Api', required: true }],
 		properties: [
 			// ─── Resource ─────────────────────────────────────────────────────
@@ -34,25 +35,25 @@ export class ZohoDesk implements INodeType {
 				noDataExpression: true,
 				required: true,
 				options: [
-					{ name: 'Record', value: 'record' },
-					{ name: 'Ticket', value: 'ticket' },
-					{ name: 'Comment', value: 'comment' },
-					{ name: 'Thread', value: 'thread' },
-					{ name: 'Ticket Follower', value: 'ticketFollower' },
-					{ name: 'Ticket Attachment', value: 'ticketAttachment' },
-					{ name: 'Tag', value: 'tag' },
-					{ name: 'Ticket Approval', value: 'ticketApproval' },
-					{ name: 'Ticket Pin', value: 'ticketPin' },
-					{ name: 'Time Entry', value: 'timeEntry' },
-					{ name: 'Email Template', value: 'emailTemplate' },
-					{ name: 'Skill', value: 'skill' },
 					{ name: 'Agent', value: 'agent' },
 					{ name: 'Business Hour', value: 'businessHour' },
+					{ name: 'Comment', value: 'comment' },
+					{ name: 'Dashboard', value: 'ticketMetrics' },
+					{ name: 'Email Template', value: 'emailTemplate' },
 					{ name: 'Holiday List', value: 'holidayList' },
 					{ name: 'Organisation', value: 'organisation' },
 					{ name: 'Profile', value: 'profile' },
+					{ name: 'Record', value: 'record' },
 					{ name: 'Role', value: 'role' },
-					{ name: 'Dashboard', value: 'ticketMetrics' },
+					{ name: 'Skill', value: 'skill' },
+					{ name: 'Tag', value: 'tag' },
+					{ name: 'Thread', value: 'thread' },
+					{ name: 'Ticket', value: 'ticket' },
+					{ name: 'Ticket Approval', value: 'ticketApproval' },
+					{ name: 'Ticket Attachment', value: 'ticketAttachment' },
+					{ name: 'Ticket Follower', value: 'ticketFollower' },
+					{ name: 'Ticket Pin', value: 'ticketPin' },
+					{ name: 'Time Entry', value: 'timeEntry' },
 				],
 				default: 'record',
 			},
@@ -140,7 +141,12 @@ export class ZohoDesk implements INodeType {
 					returnData.push({ json: { error: (error as Error).message }, pairedItem: { item: i } });
 					continue;
 				}
-				if (error instanceof NodeOperationError) throw error;
+				// Both constructors return the error untouched when handed an instance of
+				// their own class, so an API failure keeps its HTTP code and Zoho error
+				// body instead of being flattened into a generic operation error.
+				if (error instanceof NodeApiError) {
+					throw new NodeApiError(this.getNode(), error as unknown as JsonObject);
+				}
 				throw new NodeOperationError(this.getNode(), error as Error, { itemIndex: i });
 			}
 		}

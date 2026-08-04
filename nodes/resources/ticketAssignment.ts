@@ -416,7 +416,7 @@ export const ticketAssignmentProperties: INodeProperties[] = [
 				resource: ['ticket'], operation: ['shiftBasedAssign'],
 			},
 		},
-		description: 'Agents to assign to when no shift is currently active (off-hours / on-call). Leave empty to return a warning instead.',
+		description: 'Agents to assign to when no shift is currently active (off-hours / on-call). Leave empty to return a warning instead. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 	},
 	{
 		displayName: 'Max Open Tickets Per Agent',

@@ -8,8 +8,8 @@ import type {
 	IWebhookResponseData,
 	IDataObject,
 } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
-import { zohoWebhookRequest, zohoLoadOptionsRequest } from './helpers';
+import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
+import { zohoWebhookRequest, zohoLoadOptionsRequest } from '../helpers';
 
 // ─── Event definitions per module ────────────────────────────────────────────
 
@@ -130,14 +130,14 @@ export class ZohoDeskTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Zoho Desk Trigger',
 		name: 'zohoDeskTrigger',
-		icon: 'file:zohoDesk.svg',
+		icon: { light: 'file:../../icons/zohoDesk.svg', dark: 'file:../../icons/zohoDesk.dark.svg' },
 		group: ['trigger'],
 		version: 1,
 		subtitle: '={{$parameter["module"]}}',
 		description: 'Receive real-time events from Zoho Desk via webhooks',
 		defaults: { name: 'Zoho Desk Trigger' },
 		inputs: [],
-		outputs: ['main'],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [{ name: 'zohoDeskOAuth2Api', required: true }],
 		webhooks: [
 			// Zoho sends a GET validation request when creating a webhook
@@ -171,24 +171,24 @@ export class ZohoDeskTrigger implements INodeType {
 				required: true,
 				default: 'ticket',
 				options: [
-					{ name: 'Ticket', value: 'ticket' },
-					{ name: 'Contact', value: 'contact' },
 					{ name: 'Account', value: 'account' },
 					{ name: 'Agent', value: 'agent' },
-					{ name: 'Department', value: 'department' },
-					{ name: 'Task', value: 'task' },
 					{ name: 'Call', value: 'call' },
+					{ name: 'Contact', value: 'contact' },
+					{ name: 'Department', value: 'department' },
 					{ name: 'Event', value: 'event' },
-					{ name: 'Time Entry', value: 'timeEntry' },
 					{ name: 'Knowledge Base', value: 'knowledgeBase' },
 					{ name: 'Messaging', value: 'messaging' },
+					{ name: 'Task', value: 'task' },
+					{ name: 'Ticket', value: 'ticket' },
+					{ name: 'Time Entry', value: 'timeEntry' },
 					],
 				description: 'The module to listen for events on',
 			},
 
 // ─── Events (dynamically loaded based on module) ────────────────
 			{
-				displayName: 'Events',
+				displayName: 'Event Names or IDs',
 				name: 'events',
 				type: 'multiOptions',
 				required: true,
@@ -197,7 +197,7 @@ export class ZohoDeskTrigger implements INodeType {
 					loadOptionsMethod: 'getEvents',
 					loadOptionsDependsOn: ['module'],
 				},
-				description: 'The events to listen for',
+				description: 'The events to listen for. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 			},
 
 			// ─── Department Filter ───────────────────────────────────────────
@@ -223,7 +223,7 @@ export class ZohoDeskTrigger implements INodeType {
 						events: ['Ticket_Update:fields', 'Ticket_Update:fields:prevState'],
 					},
 				},
-				description: 'Select up to 5 ticket fields to track for the "Specific Fields" update events',
+				description: 'Select up to 5 ticket fields to track for the "Specific Fields" update events. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 			},
 
 			// ─── Options ─────────────────────────────────────────────────────
@@ -260,6 +260,7 @@ export class ZohoDeskTrigger implements INodeType {
 				],
 			},
 		],
+		usableAsTool: true,
 	};
 
 	methods = {
@@ -333,7 +334,6 @@ export class ZohoDeskTrigger implements INodeType {
 
 			async create(this: IHookFunctions): Promise<boolean> {
 				const webhookUrl = this.getNodeWebhookUrl('default');
-				const module = this.getNodeParameter('module') as string;
 				const events = this.getNodeParameter('events', []) as string[];
 				const departmentIds = this.getNodeParameter('departmentIds', []) as string[];
 				const options = this.getNodeParameter('options', {}) as IDataObject;
@@ -449,8 +449,12 @@ export class ZohoDeskTrigger implements INodeType {
 						'DELETE',
 						`/webhooks/${staticData.webhookId as string}`,
 					);
-				} catch {
-					// Webhook may already be deleted — ignore
+				} catch (error) {
+					// The webhook may already be gone on Zoho's side, which must not block
+					// deactivation — but surface why the delete failed instead of hiding it.
+					this.logger.warn(
+						`Zoho Desk Trigger: could not delete webhook ${staticData.webhookId as string}: ${(error as Error).message}`,
+					);
 				}
 
 				delete staticData.webhookId;
