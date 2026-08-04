@@ -58,7 +58,7 @@
     "@types/bun": "^1.2.0",
     "eslint": "^9.39.4",
     "n8n-workflow": "^2.13.0",
-    "release-it": "^21.0.1",
+    "release-it": "^20.2.1",
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
