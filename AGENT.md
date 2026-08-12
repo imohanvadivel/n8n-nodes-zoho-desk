@@ -214,7 +214,7 @@ Supported modules: tickets, tasks, calls, events, contacts, accounts.
 | Update | PATCH | `/tickets/{id}/attachments/{attachmentId}` |
 | Delete | DELETE | `/tickets/{id}/attachments/{attachmentId}` |
 
-Create uses multipart `formData` — bypasses `zohoApiRequest`, calls `requestOAuth2` directly.
+Create is a multipart upload (native `FormData` body) — bypasses `zohoApiRequest`, calls `httpRequestWithAuthentication` directly.
 
 ### Tag
 

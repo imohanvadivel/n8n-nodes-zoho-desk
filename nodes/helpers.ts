@@ -2,6 +2,8 @@ import type {
 	IExecuteFunctions,
 	IHookFunctions,
 	IWebhookFunctions,
+	IHttpRequestMethods,
+	IHttpRequestOptions,
 	ILoadOptionsFunctions,
 	INodePropertyOptions,
 	IDataObject,
@@ -21,11 +23,87 @@ function resolveBaseUrl(credentials: IDataObject): string {
 	return (credentials.baseUrl as string) || DEFAULT_BASE_URL;
 }
 
+// ─── Error response extraction ──────────────────────────────────────────────
+
+// httpRequestWithAuthentication surfaces the API response body in different
+// places depending on how n8n wrapped the axios error, so check each of them.
+// A NodeApiError keeps the parsed body on context.data — it drops `cause`,
+// because ExecutionBaseError redeclares that field.
+function errorResponseBody(error: unknown): unknown {
+	const err = error as {
+		description?: unknown;
+		error?: unknown;
+		context?: { data?: unknown };
+		response?: { body?: unknown; data?: unknown };
+		cause?: { body?: unknown; error?: unknown; response?: { body?: unknown; data?: unknown } };
+	};
+	return (
+		err.cause?.body
+		?? err.cause?.response?.data
+		?? err.cause?.response?.body
+		?? err.cause?.error
+		?? err.context?.data
+		?? err.response?.data
+		?? err.response?.body
+		?? err.error
+		?? err.description
+	);
+}
+
+// The status code lands on the NodeApiError itself (httpCode) or on the axios
+// error it wraps, depending on which layer produced the failure.
+export function errorStatusCode(error: unknown): number | undefined {
+	type WithStatus = {
+		httpCode?: string | number;
+		statusCode?: string | number;
+		status?: string | number;
+		response?: { status?: number; statusCode?: number };
+	};
+	const err = error as WithStatus & { cause?: WithStatus };
+	const raw =
+		err.httpCode
+		?? err.statusCode
+		?? err.status
+		?? err.response?.status
+		?? err.response?.statusCode
+		?? err.cause?.httpCode
+		?? err.cause?.statusCode
+		?? err.cause?.status
+		?? err.cause?.response?.status
+		?? err.cause?.response?.statusCode;
+	const code = typeof raw === 'string' ? Number(raw) : raw;
+	return typeof code === 'number' && Number.isFinite(code) ? code : undefined;
+}
+
+// NodeApiError's constructor hands back its input untouched when that input is
+// already a NodeApiError — which would silently drop the Zoho-specific message
+// we just built. So wrap the error it came from instead.
+function zohoApiError(
+	context: IExecuteFunctions | IHookFunctions | IWebhookFunctions,
+	error: unknown,
+	message: string,
+): NodeApiError {
+	let source: unknown = error instanceof NodeApiError ? error.cause : error;
+	if (!source || source instanceof NodeApiError) {
+		const wrapped = error as NodeApiError & { context?: { data?: unknown } };
+		source = {
+			message: wrapped?.message ?? message,
+			...(wrapped?.description ? { description: wrapped.description } : {}),
+			...(wrapped?.context?.data ? { data: wrapped.context.data } : {}),
+		};
+	}
+	const status = errorStatusCode(error);
+	return new NodeApiError(context.getNode(), source as JsonObject, {
+		message,
+		...(status !== undefined ? { httpCode: String(status) } : {}),
+	});
+}
+
 // ─── Execute-context API request ────────────────────────────────────────────
 
 export async function zohoApiRequest(
 	context: IExecuteFunctions,
-	method: string,
+	method: IHttpRequestMethods,
 	endpoint: string,
 	body: Record<string, unknown> = {},
 	qs: Record<string, unknown> = {},
@@ -34,24 +112,28 @@ export async function zohoApiRequest(
 	const orgId = credentials.orgId as string;
 	const baseUrl = resolveBaseUrl(credentials);
 
-	const options: Record<string, unknown> = {
+	const options: IHttpRequestOptions = {
 		method,
 		headers: { orgId, 'Content-Type': 'application/json' },
-		uri: `${baseUrl}${endpoint}`,
+		url: `${baseUrl}${endpoint}`,
 		body,
 		json: true,
 	};
 
-	if (Object.keys(qs).length) options.qs = qs;
+	if (Object.keys(qs).length) options.qs = qs as IDataObject;
 	if (!Object.keys(body).length) {
 		delete options.body;
 	}
 
 	try {
-		return await context.helpers.requestOAuth2.call(context, 'zohoDeskOAuth2Api', options);
+		return await context.helpers.httpRequestWithAuthentication.call(
+			context,
+			'zohoDeskOAuth2Api',
+			options,
+		);
 	} catch (error: unknown) {
 		// Extract Zoho API error details from the response
-		const err = error as { message?: string; description?: string; cause?: { body?: unknown } };
+		const err = error as { message?: string };
 		let message = err.message ?? 'Unknown error';
 
 		// Helper to format a parsed Zoho error object
@@ -69,7 +151,7 @@ export async function zohoApiRequest(
 
 		// Try to parse the error response body for Zoho-specific error details
 		try {
-			const responseBody = err.cause?.body ?? err.description;
+			const responseBody = errorResponseBody(error);
 			if (typeof responseBody === 'string') {
 				const parsed = JSON.parse(responseBody) as Record<string, unknown>;
 				const formatted = formatZohoError(parsed);
@@ -90,7 +172,7 @@ export async function zohoApiRequest(
 			// Could not parse error body — use original message
 		}
 
-		throw new NodeApiError(context.getNode(), error as JsonObject, { message });
+		throw zohoApiError(context, error, message);
 	}
 }
 
@@ -105,22 +187,26 @@ export async function zohoLoadOptionsRequest(
 	const orgId = credentials.orgId as string;
 	const baseUrl = resolveBaseUrl(credentials);
 
-	const options: Record<string, unknown> = {
+	const options: IHttpRequestOptions = {
 		method: 'GET',
 		headers: { orgId },
-		uri: `${baseUrl}${endpoint}`,
+		url: `${baseUrl}${endpoint}`,
 		json: true,
 	};
-	if (Object.keys(qs).length) options.qs = qs;
+	if (Object.keys(qs).length) options.qs = qs as IDataObject;
 
-	return context.helpers.requestOAuth2.call(context, 'zohoDeskOAuth2Api', options);
+	return await context.helpers.httpRequestWithAuthentication.call(
+		context,
+		'zohoDeskOAuth2Api',
+		options,
+	);
 }
 
 // ─── Webhook-context API request (for IHookFunctions / IWebhookFunctions) ───
 
 export async function zohoWebhookRequest(
 	context: IHookFunctions | IWebhookFunctions,
-	method: string,
+	method: IHttpRequestMethods,
 	endpoint: string,
 	body: Record<string, unknown> = {},
 ) {
@@ -128,10 +214,10 @@ export async function zohoWebhookRequest(
 	const orgId = credentials.orgId as string;
 	const baseUrl = resolveBaseUrl(credentials);
 
-	const options: Record<string, unknown> = {
+	const options: IHttpRequestOptions = {
 		method,
 		headers: { orgId, 'Content-Type': 'application/json' },
-		uri: `${baseUrl}${endpoint}`,
+		url: `${baseUrl}${endpoint}`,
 		body,
 		json: true,
 	};
@@ -141,13 +227,17 @@ export async function zohoWebhookRequest(
 	}
 
 	try {
-		return await context.helpers.requestOAuth2.call(context, 'zohoDeskOAuth2Api', options);
+		return await context.helpers.httpRequestWithAuthentication.call(
+			context,
+			'zohoDeskOAuth2Api',
+			options,
+		);
 	} catch (error: unknown) {
-		const err = error as { message?: string; description?: string; cause?: { body?: unknown } };
+		const err = error as { message?: string };
 		let message = err.message ?? 'Unknown error';
 
 		try {
-			const responseBody = err.cause?.body ?? err.description;
+			const responseBody = errorResponseBody(error);
 			if (typeof responseBody === 'string') {
 				const parsed = JSON.parse(responseBody) as Record<string, unknown>;
 				if (parsed.message) message = `${parsed.errorCode ?? 'ERROR'}: ${parsed.message}`;
@@ -170,7 +260,7 @@ export async function zohoWebhookRequest(
 			message += '. Note: Zoho validates the webhook URL by sending a GET request. Ensure your n8n instance is publicly accessible (not localhost).';
 		}
 
-		throw new NodeApiError(context.getNode(), error as JsonObject, { message });
+		throw zohoApiError(context, error, message);
 	}
 }
 

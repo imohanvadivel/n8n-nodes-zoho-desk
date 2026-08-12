@@ -9,7 +9,7 @@ import type {
 	IDataObject,
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
-import { zohoWebhookRequest, zohoLoadOptionsRequest } from '../helpers';
+import { zohoWebhookRequest, zohoLoadOptionsRequest, errorStatusCode } from '../helpers';
 
 // ─── Event definitions per module ────────────────────────────────────────────
 
@@ -324,7 +324,12 @@ export class ZohoDeskTrigger implements INodeType {
 					// Only treat a definitive not-found as "webhook gone". A transient
 					// failure (rate limit, network) must not trigger a duplicate create.
 					const message = (error as Error).message ?? '';
-					if (/404|NOT[_ ]?FOUND|INVALID_DATA|UNPROCESSABLE/i.test(message)) {
+					const status = errorStatusCode(error);
+					if (
+						status === 404
+						|| status === 422
+						|| /404|NOT[_ ]?FOUND|INVALID_DATA|UNPROCESSABLE/i.test(message)
+					) {
 						delete staticData.webhookId;
 						return false;
 					}

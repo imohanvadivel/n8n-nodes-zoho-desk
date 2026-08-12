@@ -1,4 +1,4 @@
-import type { INodeProperties, IDataObject } from 'n8n-workflow';
+import type { INodeProperties, IDataObject, IHttpRequestOptions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import type { ResourceExecuteHandler } from './types';
 import { zohoApiRequest } from '../helpers';
@@ -556,30 +556,35 @@ export const executeTicketSubResources: ResourceExecuteHandler = async (context,
 			const datacenter = credentials.datacenter as string || 'com';
 			const baseUrl = `https://desk.zoho.${datacenter}/api/v1`;
 
-			const qs = new URLSearchParams();
+			const qs: IDataObject = {};
 			if (attachmentOptions.isPublic !== undefined) {
-				qs.append('isPublic', String(attachmentOptions.isPublic));
+				qs.isPublic = attachmentOptions.isPublic;
 			}
-			const qsStr = qs.toString() ? `?${qs.toString()}` : '';
 
-			const response = await context.helpers.requestOAuth2.call(
+			// Multipart upload: a spec-compliant FormData body lets the HTTP helper
+			// set the multipart content type and boundary itself.
+			const formData = new FormData();
+			formData.append(
+				'file',
+				new Blob([dataBuffer], { type: binaryData.mimeType || 'application/octet-stream' }),
+				binaryData.fileName || 'file',
+			);
+
+			const options: IHttpRequestOptions = {
+				method: 'POST',
+				url: `${baseUrl}/tickets/${encodeURIComponent(ticketId)}/attachments`,
+				headers: { orgId },
+				// IHttpRequestOptions types `body` against the form-data package, but
+				// the helper hands it straight to axios, which handles native FormData.
+				body: formData as unknown as IHttpRequestOptions['body'],
+				json: true,
+			};
+			if (Object.keys(qs).length) options.qs = qs;
+
+			const response = await context.helpers.httpRequestWithAuthentication.call(
 				context,
 				'zohoDeskOAuth2Api',
-				{
-					method: 'POST',
-					uri: `${baseUrl}/tickets/${encodeURIComponent(ticketId)}/attachments${qsStr}`,
-					headers: { orgId },
-					formData: {
-						file: {
-							value: dataBuffer,
-							options: {
-								filename: binaryData.fileName || 'file',
-								contentType: binaryData.mimeType || 'application/octet-stream',
-							},
-						},
-					},
-					json: true,
-				},
+				options,
 			);
 			const executionData = context.helpers.constructExecutionMetaData(
 				context.helpers.returnJsonArray(response as IDataObject),

@@ -1,6 +1,7 @@
 // describe/test/expect/beforeEach are Bun test globals, and jest.fn provides the
 // mocks — imported from nowhere on purpose: n8n's community-node linter rejects a
 // 'bun:test' import outright (no dependencies allowed), and it scans this source.
+import { NodeApiError } from 'n8n-workflow';
 import { ZohoDesk } from './ZohoDesk.node';
 import {
 	zohoApiRequest,
@@ -14,7 +15,7 @@ import {
 // ─── Mock helpers ────────────────────────────────────────────────────────────
 
 function createMockExecuteFunctions(params: Record<string, unknown> = {}) {
-	const requestOAuth2 = jest.fn(() => Promise.resolve({}));
+	const httpRequestWithAuthentication = jest.fn(() => Promise.resolve({}));
 	const returnJsonArray = jest.fn((data: unknown) => {
 		if (Array.isArray(data)) return data.map((d) => ({ json: d }));
 		return [{ json: data }];
@@ -51,7 +52,7 @@ function createMockExecuteFunctions(params: Record<string, unknown> = {}) {
 		getNode,
 		continueOnFail,
 		helpers: {
-			requestOAuth2,
+			httpRequestWithAuthentication,
 			returnJsonArray,
 			constructExecutionMetaData,
 			assertBinaryData,
@@ -66,13 +67,13 @@ function createMockExecuteFunctions(params: Record<string, unknown> = {}) {
 let lastApiCall: { method: string; endpoint: string; body: any; qs: any } | null = null;
 
 // We need to mock the module-level zohoApiRequest. Since the execute method
-// calls zohoApiRequest(this, ...), we mock helpers.requestOAuth2 and check
-// what gets passed through.
+// calls zohoApiRequest(this, ...), we mock helpers.httpRequestWithAuthentication
+// and check what gets passed through.
 function setupApiMock(ctx: any, response: unknown = { id: '1', success: true }) {
-	ctx.helpers.requestOAuth2.mockImplementation((_cred: string, opts: any) => {
+	ctx.helpers.httpRequestWithAuthentication.mockImplementation((_cred: string, opts: any) => {
 		lastApiCall = {
 			method: opts.method,
-			endpoint: opts.uri.replace('https://desk.zoho.com/api/v1', ''),
+			endpoint: opts.url.replace('https://desk.zoho.com/api/v1', ''),
 			body: opts.body,
 			qs: opts.qs,
 		};
@@ -205,7 +206,7 @@ describe('Helper Functions', () => {
 	describe('zohoApiRequest error parsing', () => {
 		test('parses Zoho error response from cause.body string', async () => {
 			const ctx = createMockExecuteFunctions({});
-			ctx.helpers.requestOAuth2.mockImplementation(() => {
+			ctx.helpers.httpRequestWithAuthentication.mockImplementation(() => {
 				const err: any = new Error('Request failed');
 				err.cause = {
 					body: JSON.stringify({
@@ -229,7 +230,7 @@ describe('Helper Functions', () => {
 
 		test('parses Zoho error response from description object', async () => {
 			const ctx = createMockExecuteFunctions({});
-			ctx.helpers.requestOAuth2.mockImplementation(() => {
+			ctx.helpers.httpRequestWithAuthentication.mockImplementation(() => {
 				const err: any = new Error('Request failed');
 				err.description = { errorCode: 'NOT_FOUND', message: 'Record not found' };
 				throw err;
@@ -244,9 +245,57 @@ describe('Helper Functions', () => {
 			}
 		});
 
+		test('parses Zoho error response from an axios-style response body', async () => {
+			const ctx = createMockExecuteFunctions({});
+			ctx.helpers.httpRequestWithAuthentication.mockImplementation(() => {
+				const err: any = new Error('Request failed with status code 422');
+				err.response = {
+					status: 422,
+					data: {
+						errorCode: 'UNPROCESSABLE_ENTITY',
+						message: 'Invalid input',
+						errors: [{ fieldName: 'subject', errorMessage: 'Required' }],
+					},
+				};
+				throw err;
+			});
+
+			try {
+				await zohoApiRequest(ctx, 'POST', '/tickets', {});
+				expect(true).toBe(false);
+			} catch (e: any) {
+				expect(e.message).toContain('UNPROCESSABLE_ENTITY');
+				expect(e.message).toContain('Invalid input');
+				expect(e.message).toContain('subject: Required');
+				expect(e.httpCode).toBe('422');
+			}
+		});
+
+		test('keeps the Zoho message when the helper already threw a NodeApiError', async () => {
+			const ctx = createMockExecuteFunctions({});
+			ctx.helpers.httpRequestWithAuthentication.mockImplementation(() => {
+				const axiosError: any = new Error('Request failed with status code 422');
+				axiosError.response = {
+					status: 422,
+					data: { errorCode: 'UNPROCESSABLE_ENTITY', message: 'Invalid input' },
+				};
+				// NodeApiError returns its input untouched when re-wrapped, so the
+				// helper must unwrap before building its own message.
+				throw new NodeApiError({ name: 'Zoho Desk' } as any, axiosError);
+			});
+
+			try {
+				await zohoApiRequest(ctx, 'POST', '/tickets', {});
+				expect(true).toBe(false);
+			} catch (e: any) {
+				expect(e.message).toContain('UNPROCESSABLE_ENTITY');
+				expect(e.message).toContain('Invalid input');
+			}
+		});
+
 		test('parses embedded JSON in error message', async () => {
 			const ctx = createMockExecuteFunctions({});
-			ctx.helpers.requestOAuth2.mockImplementation(() => {
+			ctx.helpers.httpRequestWithAuthentication.mockImplementation(() => {
 				throw new Error('422 - {"errorCode":"UNPROCESSABLE","message":"Cannot process"}');
 			});
 
@@ -756,11 +805,11 @@ describe('Ticket Attachment Resource', () => {
 			binaryPropertyName: 'data',
 			attachmentOptions: {},
 		});
-		ctx.helpers.requestOAuth2.mockImplementation((_cred: string, opts: any) => {
+		ctx.helpers.httpRequestWithAuthentication.mockImplementation((_cred: string, opts: any) => {
 			lastApiCall = {
 				method: opts.method,
-				endpoint: opts.uri,
-				body: opts.formData,
+				endpoint: opts.url,
+				body: opts.body,
 				qs: null,
 			};
 			return Promise.resolve({ id: 'att1' });
@@ -1888,7 +1937,7 @@ describe('Error Handling', () => {
 			recordId: 'bad-id',
 		});
 		ctx.continueOnFail.mockReturnValue(true);
-		ctx.helpers.requestOAuth2.mockImplementation(() => {
+		ctx.helpers.httpRequestWithAuthentication.mockImplementation(() => {
 			throw new Error('NOT_FOUND: Record not found');
 		});
 
@@ -1906,7 +1955,7 @@ describe('Error Handling', () => {
 			recordId: 'bad-id',
 		});
 		ctx.continueOnFail.mockReturnValue(false);
-		ctx.helpers.requestOAuth2.mockImplementation(() => {
+		ctx.helpers.httpRequestWithAuthentication.mockImplementation(() => {
 			throw new Error('NOT_FOUND: Record not found');
 		});
 
@@ -1995,10 +2044,10 @@ describe('Node Description', () => {
 // ─── zohoApiRequest function ─────────────────────────────────────────────────
 
 describe('zohoApiRequest', () => {
-	test('sends correct headers and URI', async () => {
+	test('sends correct headers and URL', async () => {
 		const ctx = createMockExecuteFunctions({});
 		let capturedOpts: any;
-		ctx.helpers.requestOAuth2.mockImplementation((_cred: string, opts: any) => {
+		ctx.helpers.httpRequestWithAuthentication.mockImplementation((_cred: string, opts: any) => {
 			capturedOpts = opts;
 			return Promise.resolve({ ok: true });
 		});
@@ -2006,7 +2055,7 @@ describe('zohoApiRequest', () => {
 		await zohoApiRequest(ctx, 'GET', '/tickets');
 
 		expect(capturedOpts.method).toBe('GET');
-		expect(capturedOpts.uri).toBe('https://desk.zoho.com/api/v1/tickets');
+		expect(capturedOpts.url).toBe('https://desk.zoho.com/api/v1/tickets');
 		expect(capturedOpts.headers.orgId).toBe('test-org-123');
 		expect(capturedOpts.headers['Content-Type']).toBe('application/json');
 		expect(capturedOpts.json).toBe(true);
@@ -2015,7 +2064,7 @@ describe('zohoApiRequest', () => {
 	test('includes query string when provided', async () => {
 		const ctx = createMockExecuteFunctions({});
 		let capturedOpts: any;
-		ctx.helpers.requestOAuth2.mockImplementation((_cred: string, opts: any) => {
+		ctx.helpers.httpRequestWithAuthentication.mockImplementation((_cred: string, opts: any) => {
 			capturedOpts = opts;
 			return Promise.resolve({ ok: true });
 		});
@@ -2027,7 +2076,7 @@ describe('zohoApiRequest', () => {
 	test('omits body when empty', async () => {
 		const ctx = createMockExecuteFunctions({});
 		let capturedOpts: any;
-		ctx.helpers.requestOAuth2.mockImplementation((_cred: string, opts: any) => {
+		ctx.helpers.httpRequestWithAuthentication.mockImplementation((_cred: string, opts: any) => {
 			capturedOpts = opts;
 			return Promise.resolve({ ok: true });
 		});
@@ -2039,7 +2088,7 @@ describe('zohoApiRequest', () => {
 	test('includes body when provided', async () => {
 		const ctx = createMockExecuteFunctions({});
 		let capturedOpts: any;
-		ctx.helpers.requestOAuth2.mockImplementation((_cred: string, opts: any) => {
+		ctx.helpers.httpRequestWithAuthentication.mockImplementation((_cred: string, opts: any) => {
 			capturedOpts = opts;
 			return Promise.resolve({ ok: true });
 		});
