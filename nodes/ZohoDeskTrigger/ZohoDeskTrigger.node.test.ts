@@ -1,12 +1,13 @@
 // describe/test/expect/beforeEach are Bun test globals, and jest.fn provides the
 // mocks — imported from nowhere on purpose: n8n's community-node linter rejects a
 // 'bun:test' import outright (no dependencies allowed), and it scans this source.
+import { NodeApiError } from 'n8n-workflow';
 import { ZohoDeskTrigger } from './ZohoDeskTrigger.node';
 
 // ─── Mock helpers ────────────────────────────────────────────────────────────
 
 function createMockHookFunctions(params: Record<string, unknown> = {}, staticData: Record<string, unknown> = {}) {
-	const requestOAuth2 = jest.fn(() => Promise.resolve({ id: 'wh-1' }));
+	const httpRequestWithAuthentication = jest.fn(() => Promise.resolve({ id: 'wh-1' }));
 
 	const ctx: any = {
 		getNodeParameter: jest.fn((name: string, fallback?: unknown) => {
@@ -22,7 +23,7 @@ function createMockHookFunctions(params: Record<string, unknown> = {}, staticDat
 			Promise.resolve({ orgId: 'test-org-123', baseUrl: 'https://desk.zoho.com/api/v1' }),
 		),
 		logger: { warn: jest.fn(() => {}), info: jest.fn(() => {}), error: jest.fn(() => {}), debug: jest.fn(() => {}) },
-		helpers: { requestOAuth2 },
+		helpers: { httpRequestWithAuthentication },
 	};
 	return ctx;
 }
@@ -30,7 +31,7 @@ function createMockHookFunctions(params: Record<string, unknown> = {}, staticDat
 async function createWebhook(params: Record<string, unknown>, staticData: Record<string, unknown> = {}) {
 	const ctx = createMockHookFunctions(params, staticData);
 	let capturedBody: any;
-	ctx.helpers.requestOAuth2.mockImplementation((_cred: string, opts: any) => {
+	ctx.helpers.httpRequestWithAuthentication.mockImplementation((_cred: string, opts: any) => {
 		capturedBody = opts.body;
 		return Promise.resolve({ id: 'wh-1' });
 	});
@@ -108,7 +109,7 @@ describe('Trigger subscription building', () => {
 
 	test('throws when Zoho returns no webhook ID', async () => {
 		const ctx = createMockHookFunctions({ module: 'tickets', events: ['Ticket_Add'] });
-		ctx.helpers.requestOAuth2.mockImplementation(() => Promise.resolve(undefined));
+		ctx.helpers.httpRequestWithAuthentication.mockImplementation(() => Promise.resolve(undefined));
 		const trigger = new ZohoDeskTrigger();
 		await expect(trigger.webhookMethods.default.create.call(ctx)).rejects.toThrow(/webhook ID/);
 	});
@@ -120,8 +121,38 @@ describe('Trigger checkExists', () => {
 	test('clears webhookId and returns false on not-found', async () => {
 		const staticData: Record<string, unknown> = { webhookId: 'wh-1' };
 		const ctx = createMockHookFunctions({}, staticData);
-		ctx.helpers.requestOAuth2.mockImplementation(() => {
+		ctx.helpers.httpRequestWithAuthentication.mockImplementation(() => {
 			throw new Error('404 - NOT_FOUND: The webhook does not exist');
+		});
+		const trigger = new ZohoDeskTrigger();
+		const exists = await trigger.webhookMethods.default.checkExists.call(ctx);
+		expect(exists).toBe(false);
+		expect(staticData.webhookId).toBeUndefined();
+	});
+
+	test('clears webhookId when only a 404 status is available', async () => {
+		const staticData: Record<string, unknown> = { webhookId: 'wh-1' };
+		const ctx = createMockHookFunctions({}, staticData);
+		ctx.helpers.httpRequestWithAuthentication.mockImplementation(() => {
+			const err: any = new Error('Request failed with status code 404');
+			err.response = { status: 404, data: {} };
+			throw err;
+		});
+		const trigger = new ZohoDeskTrigger();
+		const exists = await trigger.webhookMethods.default.checkExists.call(ctx);
+		expect(exists).toBe(false);
+		expect(staticData.webhookId).toBeUndefined();
+	});
+
+	test('clears webhookId when n8n wraps the 404 in a NodeApiError', async () => {
+		const staticData: Record<string, unknown> = { webhookId: 'wh-1' };
+		const ctx = createMockHookFunctions({}, staticData);
+		ctx.helpers.httpRequestWithAuthentication.mockImplementation(() => {
+			// n8n rewrites the message for known status codes, so only the status
+			// itself identifies this as a definitive not-found.
+			const axiosError: any = new Error('Request failed with status code 404');
+			axiosError.response = { status: 404, data: {} };
+			throw new NodeApiError({ name: 'Zoho Desk Trigger' } as any, axiosError);
 		});
 		const trigger = new ZohoDeskTrigger();
 		const exists = await trigger.webhookMethods.default.checkExists.call(ctx);
@@ -132,7 +163,7 @@ describe('Trigger checkExists', () => {
 	test('keeps webhookId and returns true on transient errors', async () => {
 		const staticData: Record<string, unknown> = { webhookId: 'wh-1' };
 		const ctx = createMockHookFunctions({}, staticData);
-		ctx.helpers.requestOAuth2.mockImplementation(() => {
+		ctx.helpers.httpRequestWithAuthentication.mockImplementation(() => {
 			throw new Error('429 - Too many requests');
 		});
 		const trigger = new ZohoDeskTrigger();
@@ -152,22 +183,22 @@ describe('Trigger delete', () => {
 		const deleted = await trigger.webhookMethods.default.delete.call(ctx);
 		expect(deleted).toBe(true);
 		expect(staticData.webhookId).toBeUndefined();
-		const [, opts] = ctx.helpers.requestOAuth2.mock.calls[0];
+		const [, opts] = ctx.helpers.httpRequestWithAuthentication.mock.calls[0];
 		expect(opts.method).toBe('DELETE');
-		expect(opts.uri).toContain('/webhooks/wh-1');
+		expect(opts.url).toContain('/webhooks/wh-1');
 	});
 
 	test('no-ops when no webhook ID is stored', async () => {
 		const ctx = createMockHookFunctions({}, {});
 		const trigger = new ZohoDeskTrigger();
 		expect(await trigger.webhookMethods.default.delete.call(ctx)).toBe(true);
-		expect(ctx.helpers.requestOAuth2).not.toHaveBeenCalled();
+		expect(ctx.helpers.httpRequestWithAuthentication).not.toHaveBeenCalled();
 	});
 
 	test('logs and still deactivates when Zoho rejects the delete', async () => {
 		const staticData: Record<string, unknown> = { webhookId: 'wh-1' };
 		const ctx = createMockHookFunctions({}, staticData);
-		ctx.helpers.requestOAuth2.mockImplementation(() => {
+		ctx.helpers.httpRequestWithAuthentication.mockImplementation(() => {
 			throw new Error('404 - NOT_FOUND: The webhook does not exist');
 		});
 		const trigger = new ZohoDeskTrigger();
