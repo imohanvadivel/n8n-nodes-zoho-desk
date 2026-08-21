@@ -126,6 +126,7 @@ const DEPT_FILTER_EVENTS = new Set([
 // Modules whose events support department filtering
 const MODULES_WITH_DEPT_FILTER = ['ticket', 'task', 'call', 'event', 'messaging'];
 
+// eslint-disable-next-line @n8n/community-nodes/node-usable-as-tool -- trigger nodes cannot be invoked as AI tools
 export class ZohoDeskTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Zoho Desk Trigger',
@@ -260,7 +261,6 @@ export class ZohoDeskTrigger implements INodeType {
 				],
 			},
 		],
-		usableAsTool: true,
 	};
 
 	methods = {
